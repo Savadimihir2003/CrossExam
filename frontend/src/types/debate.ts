@@ -66,6 +66,7 @@ export interface DebateSummaryItem {
   thread_id: string;
   claim: string;
   status: DebateStatus;
+  max_rounds?: number;
   verdict?: VerdictType | null;
   confidence?: number | null;
   total_tokens: number;

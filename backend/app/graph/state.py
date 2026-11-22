@@ -78,6 +78,7 @@ class VerdictSchema(BaseModel):
 
 class DebateState(TypedDict):
     """Thread-scoped state passed across LangGraph nodes."""
+    thread_id: Optional[str]
     raw_claim: str
     sub_claims: list[str]
     round: int

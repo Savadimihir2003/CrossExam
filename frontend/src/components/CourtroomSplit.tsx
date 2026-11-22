@@ -22,8 +22,12 @@ export const CourtroomSplit: React.FC<CourtroomSplitProps> = ({
   subClaims,
   proponentArgs,
   skepticArgs,
+  evidenceUrls = [],
   isDebating,
 }) => {
+  const getEvidenceMetadata = (url: string) => {
+    return evidenceUrls.find((e) => e.url === url);
+  };
   return (
     <div className="space-y-4">
       {/* Sub-Claims Breakdown Banner */}
@@ -120,18 +124,24 @@ export const CourtroomSplit: React.FC<CourtroomSplitProps> = ({
                         Corroborating Evidence:
                       </span>
                       <div className="flex flex-wrap gap-1.5">
-                        {arg.citations.map((cite, cIdx) => (
-                          <a
-                            key={cIdx}
-                            href={cite}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono bg-blue-950/50 hover:bg-blue-900/60 text-blue-300 border border-blue-800/40 hover:border-blue-600 transition-colors max-w-full truncate"
-                          >
-                            <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                            <span className="truncate">{cite.replace(/^https?:\/\//, '')}</span>
-                          </a>
-                        ))}
+                        {arg.citations.map((cite, cIdx) => {
+                          const ev = getEvidenceMetadata(cite);
+                          const label = ev?.title || cite.replace(/^https?:\/\//, '');
+                          const tooltip = ev?.snippet ? `${label}\n\n"${ev.snippet}"` : cite;
+                          return (
+                            <a
+                              key={cIdx}
+                              href={cite}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={tooltip}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono bg-blue-950/50 hover:bg-blue-900/60 text-blue-300 border border-blue-800/40 hover:border-blue-600 transition-colors max-w-full truncate"
+                            >
+                              <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                              <span className="truncate max-w-[200px]">{label}</span>
+                            </a>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -210,18 +220,24 @@ export const CourtroomSplit: React.FC<CourtroomSplitProps> = ({
                         Counter-Evidence Sources:
                       </span>
                       <div className="flex flex-wrap gap-1.5">
-                        {arg.citations.map((cite, cIdx) => (
-                          <a
-                            key={cIdx}
-                            href={cite}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono bg-rose-950/50 hover:bg-rose-900/60 text-rose-300 border border-rose-800/40 hover:border-rose-600 transition-colors max-w-full truncate"
-                          >
-                            <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                            <span className="truncate">{cite.replace(/^https?:\/\//, '')}</span>
-                          </a>
-                        ))}
+                        {arg.citations.map((cite, cIdx) => {
+                          const ev = getEvidenceMetadata(cite);
+                          const label = ev?.title || cite.replace(/^https?:\/\//, '');
+                          const tooltip = ev?.snippet ? `${label}\n\n"${ev.snippet}"` : cite;
+                          return (
+                            <a
+                              key={cIdx}
+                              href={cite}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={tooltip}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono bg-rose-950/50 hover:bg-rose-900/60 text-rose-300 border border-rose-800/40 hover:border-rose-600 transition-colors max-w-full truncate"
+                            >
+                              <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                              <span className="truncate max-w-[200px]">{label}</span>
+                            </a>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

@@ -335,12 +335,22 @@ export function useDebateStream() {
         setClaim(debate.claim);
         setStatus(debate.status as DebateStatus);
         setTotalTokens(debate.total_tokens || 0);
+        setMaxRounds(debate.max_rounds || 2);
 
         const report = debate.report || {};
         setSubClaims(report.sub_claims || []);
-        setProponentArgs(report.proponent_args || []);
-        setSkepticArgs(report.skeptic_args || []);
+        const loadedPropArgs = report.proponent_args || [];
+        const loadedSkepArgs = report.skeptic_args || [];
+        setProponentArgs(loadedPropArgs);
+        setSkepticArgs(loadedSkepArgs);
         setEvidenceUrls(report.evidence_urls || []);
+
+        const recordedRounds = Math.max(
+          loadedPropArgs.length,
+          loadedSkepArgs.length,
+          1
+        );
+        setCurrentRound(recordedRounds);
 
         if (debate.verdict) {
           setVerdict({
@@ -356,7 +366,27 @@ export function useDebateStream() {
           setVerdict(null);
         }
 
-        if (debate.status === 'paused') {
+        if (debate.status === 'completed') {
+          setActiveNode(null);
+          setCompletedNodes([
+            'guard_node',
+            'decomposer_node',
+            'proponent_node',
+            'skeptic_node',
+            'moderator_node',
+            'judge_node',
+            'hitl_gate_node',
+            'persist_node',
+          ]);
+        } else if (debate.status === 'paused') {
+          setCompletedNodes([
+            'guard_node',
+            'decomposer_node',
+            'proponent_node',
+            'skeptic_node',
+            'moderator_node',
+            'judge_node',
+          ]);
           setInterruptData({
             thread_id: debate.thread_id,
             reason: report.reason || 'low_confidence',

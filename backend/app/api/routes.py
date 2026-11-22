@@ -83,6 +83,7 @@ async def debate_event_stream(
         return
 
     claim = debate_record.get("claim", "")
+    configured_max_rounds = int(debate_record.get("max_rounds") or 2)
     config = {"configurable": {"thread_id": thread_id}}
 
     async with get_checkpointer() as checkpointer:
@@ -106,10 +107,11 @@ async def debate_event_stream(
                     stream_input = None
                 else:
                     initial_state = {
+                        "thread_id": thread_id,
                         "raw_claim": claim,
                         "sub_claims": [],
                         "round": 1,
-                        "max_rounds": 2,
+                        "max_rounds": configured_max_rounds,
                         "proponent_args": [],
                         "skeptic_args": [],
                         "evidence_urls": [],
@@ -120,8 +122,7 @@ async def debate_event_stream(
                         "rescored": False,
                     }
                     stream_input = initial_state
-
-            yield format_sse("node_start", {"node": "guard_node", "round": 1, "timestamp": _iso()})
+                    yield format_sse("node_start", {"node": "guard_node", "round": 1, "timestamp": _iso()})
 
             has_interrupted = False
 
@@ -157,7 +158,13 @@ async def debate_event_stream(
                     })
 
                     # Emit specific domain events based on node output
-                    if node_name == "decomposer_node":
+                    if node_name == "guard_node" and updates.get("guard_flagged"):
+                        yield format_sse("guard_alert", {
+                            "message": "Potential prompt injection detected. Fast rejection triggered.",
+                            "timestamp": _iso(),
+                        })
+
+                    elif node_name == "decomposer_node":
                         yield format_sse("sub_claims", {
                             "sub_claims": updates.get("sub_claims", []),
                             "token_usage": updates.get("token_usage", 0),
@@ -260,7 +267,11 @@ async def debate_event_stream(
 async def create_debate_endpoint(payload: CreateDebateRequest) -> dict[str, Any]:
     """Create a new debate session and initialize SQLite state."""
     thread_id = str(uuid.uuid4())
-    record = await create_debate(thread_id=thread_id, claim=payload.claim.strip())
+    record = await create_debate(
+        thread_id=thread_id,
+        claim=payload.claim.strip(),
+        max_rounds=payload.max_rounds,
+    )
     return {
         "thread_id": thread_id,
         "claim": record["claim"],

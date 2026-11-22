@@ -9,6 +9,7 @@ from app.graph.nodes import (
     decomposer_node,
     fan_out_to_debaters,
     guard_node,
+    guard_router,
     hitl_gate_node,
     hitl_router,
     judge_node,
@@ -37,7 +38,13 @@ def create_debate_graph():
 
     # Edges
     builder.add_edge(START, "guard_node")
-    builder.add_edge("guard_node", "decomposer_node")
+
+    # Guard node either halts on injection to persist_node or proceeds to decomposer
+    builder.add_conditional_edges(
+        "guard_node",
+        guard_router,
+        ["decomposer_node", "persist_node"],
+    )
 
     # Decomposer fans out concurrently to Proponent & Skeptic
     builder.add_conditional_edges(

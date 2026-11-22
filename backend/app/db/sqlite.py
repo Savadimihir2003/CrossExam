@@ -20,6 +20,7 @@ async def init_db(db_path: Optional[str] = None) -> None:
                 thread_id TEXT PRIMARY KEY,
                 claim TEXT NOT NULL,
                 status TEXT NOT NULL,
+                max_rounds INTEGER DEFAULT 2,
                 verdict TEXT,
                 confidence REAL,
                 total_tokens INTEGER DEFAULT 0,
@@ -32,6 +33,11 @@ async def init_db(db_path: Optional[str] = None) -> None:
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_debates_created_at ON debates (created_at DESC);"
         )
+        # Migrate existing schema if table already existed without max_rounds
+        try:
+            await db.execute("ALTER TABLE debates ADD COLUMN max_rounds INTEGER DEFAULT 2;")
+        except Exception:
+            pass
         await db.commit()
 
 
@@ -39,6 +45,7 @@ async def create_debate(
     thread_id: str,
     claim: str,
     status: str = "running",
+    max_rounds: int = 2,
     db_path: Optional[str] = None,
 ) -> dict[str, Any]:
     """Create a new debate record in SQLite."""
@@ -48,11 +55,11 @@ async def create_debate(
         await db.execute(
             """
             INSERT INTO debates (
-                thread_id, claim, status, verdict, confidence,
+                thread_id, claim, status, max_rounds, verdict, confidence,
                 total_tokens, report_json, created_at, updated_at
-            ) VALUES (?, ?, ?, NULL, NULL, 0, NULL, ?, ?)
+            ) VALUES (?, ?, ?, ?, NULL, NULL, 0, NULL, ?, ?)
             """,
-            (thread_id, claim, status, now, now),
+            (thread_id, claim, status, max_rounds, now, now),
         )
         await db.commit()
 
@@ -60,6 +67,7 @@ async def create_debate(
         "thread_id": thread_id,
         "claim": claim,
         "status": status,
+        "max_rounds": max_rounds,
         "verdict": None,
         "confidence": None,
         "total_tokens": 0,
@@ -128,7 +136,7 @@ async def get_debate(
         db.row_factory = aiosqlite.Row
         async with db.execute(
             """
-            SELECT thread_id, claim, status, verdict, confidence,
+            SELECT thread_id, claim, status, max_rounds, verdict, confidence,
                    total_tokens, report_json, created_at, updated_at
             FROM debates
             WHERE thread_id = ?
@@ -159,7 +167,7 @@ async def list_debates(
         db.row_factory = aiosqlite.Row
         async with db.execute(
             """
-            SELECT thread_id, claim, status, verdict, confidence,
+            SELECT thread_id, claim, status, max_rounds, verdict, confidence,
                    total_tokens, report_json, created_at, updated_at
             FROM debates
             ORDER BY created_at DESC
