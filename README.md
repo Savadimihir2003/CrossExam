@@ -1,6 +1,5 @@
 # CrossExam: Adversarial Fact-Checker & Multi-Agent Debate Engine
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.11+](https://img.shields.io/badge/Python-3.11%2B-brightgreen.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg)](https://fastapi.tiangolo.com/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2%2B-orange.svg)](https://langchain-ai.github.io/langgraph/)
@@ -13,6 +12,7 @@
 ---
 
 ## 📖 Table of Contents
+
 - [Executive Overview](#-executive-overview)
 - [Why Adversarial Fact-Checking?](#-why-adversarial-fact-checking)
 - [System Architecture](#-system-architecture)
@@ -35,6 +35,7 @@
 Standard LLM fact-checkers suffer from single-model confirmation bias, sycophancy, and hallucinated consensus: when prompted with a premise, they frequently hallucinate supporting arguments while overlooking contradictory evidence.
 
 **CrossExam** treats truth-seeking as an adversarial legal proceeding. Rather than relying on a solitary model's judgment, CrossExam:
+
 1. **Decomposes** complex user claims into testable, atomic sub-claims.
 2. **Fans out concurrently** using LangGraph's `Send()` API to an affirmative **Proponent** and a red-team **Skeptic** agent.
 3. **Retrieves live web ground-truth** via DuckDuckGo search, distilled into clean, non-HTML citation snippets.
@@ -125,17 +126,17 @@ The core graph is orchestrated via **LangGraph** (`StateGraph`) with persistent 
 
 ## 🚀 Multi-Model Groq Free-Tier Routing
 
-Groq's Free Plan enforces an **8,000 Tokens Per Minute (TPM)** bucket limit *per model ID*. If parallel branches (`Send()`) share a single model identifier, concurrent fan-out risks immediate `429 RateLimitError` exceptions.
+Groq's Free Plan enforces an **8,000 Tokens Per Minute (TPM)** bucket limit _per model ID_. If parallel branches (`Send()`) share a single model identifier, concurrent fan-out risks immediate `429 RateLimitError` exceptions.
 
 CrossExam solves this by routing separate courtroom responsibilities to isolated models across distinct token buckets:
 
-| Role | Model Identifier | Free Tier Limits | Engineering Responsibility |
-| :--- | :--- | :--- | :--- |
+| Role             | Model Identifier                      | Free Tier Limits | Engineering Responsibility                                       |
+| :--------------- | :------------------------------------ | :--------------- | :--------------------------------------------------------------- |
 | **Prompt Guard** | `meta-llama/llama-prompt-guard-2-22m` | 30 RPM / 15K TPM | Early-rejection filter for prompt-injections & jailbreak attacks |
-| **Decomposer** | `openai/gpt-oss-20b` | 30 RPM / 8K TPM | Decomposes claim into 2–3 atomic, testable sub-claims |
-| **Proponent** | `qwen/qwen3.8-27b` | 30 RPM / 8K TPM | Live search & ~180-word affirmative evidence argument |
-| **Skeptic** | `openai/gpt-oss-20b` | 30 RPM / 8K TPM | Live search & ~180-word adversarial counter-argument |
-| **Chief Judge** | `openai/gpt-oss-120b` | 30 RPM / 8K TPM | High-reasoning synthesis, confidence scoring & citation audit |
+| **Decomposer**   | `openai/gpt-oss-20b`                  | 30 RPM / 8K TPM  | Decomposes claim into 2–3 atomic, testable sub-claims            |
+| **Proponent**    | `qwen/qwen3.8-27b`                    | 30 RPM / 8K TPM  | Live search & ~180-word affirmative evidence argument            |
+| **Skeptic**      | `openai/gpt-oss-20b`                  | 30 RPM / 8K TPM  | Live search & ~180-word adversarial counter-argument             |
+| **Chief Judge**  | `openai/gpt-oss-120b`                 | 30 RPM / 8K TPM  | High-reasoning synthesis, confidence scoring & citation audit    |
 
 All Groq invocations are wrapped with **`tenacity` exponential backoff retries** handling HTTP 429 and connection jitter gracefully.
 
@@ -144,18 +145,22 @@ All Groq invocations are wrapped with **`tenacity` exponential backoff retries**
 ## 💡 Core Engineering Highlights
 
 ### 1. Dual-Database SQLite Architecture
+
 - **`checkpoints.db` (`AsyncSqliteSaver`):** LangGraph's native thread-scoped checkpointer. Tracks execution checkpoints per `thread_id`, enabling zero-loss `interrupt()` and seamless graph resumption via `Command(resume=...)`.
 - **`debates.db` (Async SQLite Repository):** Relational application table storing debate history (`thread_id`, `claim`, `status`, `verdict`, `confidence`, `total_tokens`, `report_json`, `created_at`, `max_rounds`). Enables instant history reloads and UI hydration.
 
 ### 2. Context Isolation & Token Control
+
 - Round 1 provides each debater only with the atomic sub-claims.
-- Round 2+ passes a **sliding window**: debaters receive *only* the opponent's previous argument and sub-claims—eliminating recursive token bloat and staying under Groq's 8K TPM threshold.
+- Round 2+ passes a **sliding window**: debaters receive _only_ the opponent's previous argument and sub-claims—eliminating recursive token bloat and staying under Groq's 8K TPM threshold.
 
 ### 3. Defensive Web Search & Text Sanitization
+
 - `DuckDuckGoSearch` wrapped with strict timeouts, empty-query fallbacks, and connection error guards.
 - Two-pass sanitization: unescapes HTML entities (`&lt;b&gt;`), strips raw tags (`<[^>]+>`), unescapes again, and truncates snippets to ~120 words to avoid context contamination.
 
 ### 4. Real-Time Server-Sent Events (SSE) Engine
+
 - The backend emits structured, typed SSE events throughout graph execution:
   - `node_start` / `node_complete`: Real-time pipeline status updates.
   - `tool_call`: Live DuckDuckGo queries and retrieved source pills.
@@ -218,6 +223,7 @@ CrossExam/
 ## ⚡ Quickstart Guide
 
 ### Prerequisites
+
 - **Python 3.11+**
 - **Node.js 18+ & npm**
 - **Groq API Key** (Free tier from [console.groq.com](https://console.groq.com/))
@@ -248,9 +254,11 @@ cp .env.example .env
 ```
 
 **Launch Backend Server:**
+
 ```bash
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
+
 Interactive OpenAPI Swagger docs will be live at `http://127.0.0.1:8000/docs`.
 
 ---
@@ -275,14 +283,14 @@ Open `http://localhost:3000` (or `http://localhost:5173`) in your browser to ent
 
 ## 📡 API Reference
 
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `POST` | `/api/debates` | Accepts `{ "claim": str, "max_rounds": int }`. Initializes debate in SQLite and returns `{ "thread_id": str }`. |
-| `GET` | `/api/debates` | Fetches recent debate records from `debates.db` for sidebar history. |
-| `GET` | `/api/debates/{thread_id}` | Retrieves a complete persisted debate record by ID. |
-| `GET` | `/api/debates/{thread_id}/stream` | SSE endpoint streaming real-time events (`node_start`, `tool_call`, `argument`, `round_complete`, `interrupt`, `final_verdict`, `error`). |
-| `POST` | `/api/debates/{thread_id}/intervene` | Resumes a paused debate with `{ "human_context": str }` via `Command(resume=...)` and streams re-scoring. |
-| `GET` | `/health` | Service health status and configured model IDs. |
+| Method | Endpoint                             | Description                                                                                                                               |
+| :----- | :----------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST` | `/api/debates`                       | Accepts `{ "claim": str, "max_rounds": int }`. Initializes debate in SQLite and returns `{ "thread_id": str }`.                           |
+| `GET`  | `/api/debates`                       | Fetches recent debate records from `debates.db` for sidebar history.                                                                      |
+| `GET`  | `/api/debates/{thread_id}`           | Retrieves a complete persisted debate record by ID.                                                                                       |
+| `GET`  | `/api/debates/{thread_id}/stream`    | SSE endpoint streaming real-time events (`node_start`, `tool_call`, `argument`, `round_complete`, `interrupt`, `final_verdict`, `error`). |
+| `POST` | `/api/debates/{thread_id}/intervene` | Resumes a paused debate with `{ "human_context": str }` via `Command(resume=...)` and streams re-scoring.                                 |
+| `GET`  | `/health`                            | Service health status and configured model IDs.                                                                                           |
 
 ---
 
@@ -298,6 +306,7 @@ cd backend
 ```
 
 ### 16 Test Cases Passed:
+
 1. `test_sqlite_persistence`: Async SQLite CRUD, thread isolation, and `max_rounds` persistence.
 2. `test_search_clean_text`: HTML entity unescaping (`&lt;b&gt;`) and raw tag removal.
 3. `test_search_empty_query`: Defensive handling of empty search inputs.
@@ -320,6 +329,7 @@ cd backend
 ## 🖥️ Frontend War-Room Architecture
 
 The user interface is engineered to evoke an intelligence war-room:
+
 - **Telemetry Header:** Real-time round tracking, cumulative token usage meter, and connection badge.
 - **5-Node Execution Graph (`ExecutionGraph.tsx`):** Visualizes live progress across `Decomposer` → `Debaters (Parallel)` → `Moderator` → `Chief Judge` → `HITL Gate`.
 - **Courtroom Split (`CourtroomSplit.tsx`):** Side-by-side blue (Proponent) and red (Skeptic) columns displaying round badges, active search query pills, and interactive citation popovers.
@@ -330,4 +340,5 @@ The user interface is engineered to evoke an intelligence war-room:
 ---
 
 ## ⚖️ License
+
 Distributed under the **MIT License**. See [LICENSE](LICENSE) for details. Built for high-assurance, defensible truth verification.
