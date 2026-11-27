@@ -19,15 +19,16 @@ class DecomposedClaims(BaseModel):
 
 class ArgumentOutput(BaseModel):
     """Structured output for proponent and skeptic debate arguments."""
-    search_query: str = Field(
-        description="Single focused search query used to retrieve evidence",
-    )
     argument: str = Field(
         description="Concise ~180-word cited argument supporting or refuting the claim",
     )
     cited_urls: list[str] = Field(
         default_factory=list,
         description="URLs of evidence sources explicitly cited in the argument",
+    )
+    search_query: str = Field(
+        default="",
+        description="Optional search query reference (already executed)",
     )
 
 
@@ -40,6 +41,9 @@ class ClaimBreakdownItem(BaseModel):
     rationale: str = Field(description="Brief explanation of the verdict on this sub-claim")
 
 
+JuryMode = Literal["general", "scientific", "financial", "security"]
+
+
 class CitationAuditItem(BaseModel):
     """Credibility and relevance audit of an evidence source."""
     url: str = Field(description="Source URL")
@@ -47,6 +51,14 @@ class CitationAuditItem(BaseModel):
         description="Assessed reliability of the domain or source"
     )
     relevance: str = Field(description="How this source informs the verdict")
+    url_status: Literal["verified_live", "unreachable", "unverified"] = Field(
+        default="unverified",
+        description="Live HTTP reachability check status",
+    )
+    status_code: Optional[int] = Field(
+        default=None,
+        description="HTTP status code observed during verification",
+    )
 
 
 class VerdictSchema(BaseModel):
@@ -80,6 +92,7 @@ class DebateState(TypedDict):
     """Thread-scoped state passed across LangGraph nodes."""
     thread_id: Optional[str]
     raw_claim: str
+    mode: Optional[str]
     sub_claims: list[str]
     round: int
     max_rounds: int

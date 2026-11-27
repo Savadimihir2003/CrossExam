@@ -8,8 +8,11 @@ import {
   Activity,
   AlertCircle,
   HelpCircle,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { useDebateStream } from './hooks/useDebateStream';
+import { useTheme } from './hooks/useTheme';
 import { HistorySidebar } from './components/HistorySidebar';
 import { ExecutionGraph } from './components/ExecutionGraph';
 import { CourtroomSplit } from './components/CourtroomSplit';
@@ -29,6 +32,26 @@ const PRESET_CLAIMS = [
     label: 'Great Wall Orbit',
     claim: 'The Great Wall of China is easily visible to the unaided human eye from low Earth orbit.',
   },
+  {
+    label: 'Fusion Net Energy',
+    claim: 'Commercial nuclear fusion reactors currently provide net electricity to the public power grid.',
+  },
+  {
+    label: 'EV Carbon Footprint',
+    claim: 'Electric vehicles have a higher lifetime carbon footprint than internal combustion engine vehicles when battery manufacturing is included.',
+  },
+  {
+    label: 'Coffee Longevity',
+    claim: 'Daily moderate coffee consumption (2-3 cups) is causally linked to reduced all-cause mortality in humans.',
+  },
+  {
+    label: 'Dark Matter vs MOND',
+    claim: 'Astronomical observations of galaxy rotation curves have definitively disproven Modified Newtonian Dynamics (MOND) in favor of particle dark matter.',
+  },
+  {
+    label: 'Deep-Sea Oxygen',
+    claim: 'Polymetallic nodules on the deep ocean floor produce dark oxygen without sunlight through natural geobattery electrolysis.',
+  },
 ];
 
 export function App() {
@@ -37,6 +60,7 @@ export function App() {
     threadId,
     claim: activeClaim,
     maxRounds,
+    mode,
     currentRound,
     totalTokens,
     subClaims,
@@ -56,8 +80,10 @@ export function App() {
     resetDebate,
   } = useDebateStream();
 
+  const { theme, toggleTheme } = useTheme();
   const [inputClaim, setInputClaim] = useState('');
-  const [selectedMaxRounds, setSelectedMaxRounds] = useState(2);
+  const [selectedMaxRounds, setSelectedMaxRounds] = useState(3);
+  const [selectedMode, setSelectedMode] = useState<'general' | 'scientific' | 'financial' | 'security'>('general');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
 
@@ -65,7 +91,7 @@ export function App() {
     if (e) e.preventDefault();
     const claimToRun = inputClaim.trim() || activeClaim.trim();
     if (!claimToRun || status === 'running') return;
-    startDebate(claimToRun, selectedMaxRounds);
+    startDebate(claimToRun, selectedMaxRounds, selectedMode);
   };
 
   const handleSelectPreset = (presetClaim: string) => {
@@ -74,11 +100,11 @@ export function App() {
 
   const getStatusBadge = () => {
     const styles: Record<string, string> = {
-      idle: 'bg-slate-800 text-slate-400 border-slate-700',
-      running: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30 animate-pulse',
-      paused: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-      completed: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-      error: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
+      idle: 'bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800/80 dark:text-slate-300 dark:border-slate-700',
+      running: 'bg-cyan-50 text-cyan-700 border-cyan-300 dark:bg-cyan-500/10 dark:text-cyan-300 dark:border-cyan-500/30',
+      paused: 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30',
+      completed: 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/30',
+      error: 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/30',
     };
     return (
       <span
@@ -89,14 +115,14 @@ export function App() {
         <span
           className={`w-1.5 h-1.5 rounded-full ${
             status === 'running'
-              ? 'bg-cyan-400 animate-ping'
+              ? 'bg-cyan-600 dark:bg-cyan-400 animate-ping'
               : status === 'completed'
-              ? 'bg-emerald-400'
+              ? 'bg-emerald-600 dark:bg-emerald-400'
               : status === 'paused'
-              ? 'bg-amber-400'
+              ? 'bg-amber-600 dark:bg-amber-400'
               : status === 'error'
-              ? 'bg-rose-400'
-              : 'bg-slate-500'
+              ? 'bg-rose-600 dark:bg-rose-400'
+              : 'bg-slate-400 dark:bg-slate-500'
           }`}
         />
         {status}
@@ -122,7 +148,7 @@ export function App() {
   };
 
   return (
-    <div className="flex h-screen w-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
+    <div className="flex h-screen w-full bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans overflow-hidden transition-colors duration-200">
       {/* Left History Sidebar */}
       <HistorySidebar
         history={history}
@@ -135,50 +161,66 @@ export function App() {
       {/* Main War-Room Area */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         {/* Header Bar */}
-        <header className="px-6 py-3.5 bg-slate-900/90 border-b border-slate-800/80 flex items-center justify-between shrink-0 backdrop-blur">
+        <header className="sticky top-0 z-20 px-6 py-3.5 bg-white/90 dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between shrink-0 backdrop-blur-md">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-600 to-blue-600 text-white shadow-md shadow-cyan-900/50">
+            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-cyan-600 dark:bg-cyan-500/15 text-white dark:text-cyan-400 border border-cyan-700/20 dark:border-cyan-500/30 shadow-sm">
               <Gavel className="w-4 h-4" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-sm font-bold tracking-tight text-white uppercase">
+                <h1 className="text-sm font-bold tracking-tight text-slate-900 dark:text-white uppercase">
                   CrossExam
                 </h1>
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-400 border border-cyan-800 font-mono">
-                  v1.0 MVP
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-50 dark:bg-cyan-950/80 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/60 font-mono font-medium">
+                  v1.0
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 font-mono">
-                Adversarial Fact-Checker & Multi-Agent Courtroom Engine
+              <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                Adversarial Fact-Checker &amp; Multi-Agent Courtroom Engine
               </p>
             </div>
           </div>
 
-          {/* Telemetry Pills */}
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-950 border border-slate-800 text-xs font-mono text-slate-400">
-              <Activity className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Round:</span>
-              <span className="text-cyan-400 font-bold">{currentRound}</span>
-              <span className="text-slate-600">/</span>
+          {/* Telemetry Pills & Mode Toggle */}
+          <div className="flex items-center gap-2.5">
+            <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono tabular-nums text-slate-600 dark:text-slate-400">
+              <Activity className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+              <span>Round</span>
+              <span className="text-cyan-700 dark:text-cyan-400 font-bold">{currentRound}</span>
+              <span className="text-slate-400 dark:text-slate-600">/</span>
               <span>{maxRounds}</span>
             </div>
 
-            <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-950 border border-slate-800 text-xs font-mono text-slate-400">
-              <Zap className="w-3.5 h-3.5 text-amber-400" />
-              <span>Tokens:</span>
-              <span className="text-amber-400 font-bold">{totalTokens.toLocaleString()}</span>
+            <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono tabular-nums text-slate-600 dark:text-slate-400">
+              <Zap className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span>Tokens</span>
+              <span className="text-amber-700 dark:text-amber-400 font-bold">
+                {totalTokens.toLocaleString()}
+              </span>
             </div>
 
             {getStatusBadge()}
+
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+              title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+              className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-950 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 transition-colors"
+            >
+              {theme === 'dark' ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4 text-slate-700" />
+              )}
+            </button>
           </div>
         </header>
 
         {/* Content Container */}
         <div className="p-6 space-y-5 max-w-7xl mx-auto w-full">
           {/* Claim Input & Presets Bar */}
-          <section className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-xl space-y-3">
+          <section className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm dark:shadow-none space-y-3">
             <form onSubmit={handleRunDebate} className="flex flex-col sm:flex-row gap-2.5">
               <div className="flex-1 relative">
                 <input
@@ -187,24 +229,57 @@ export function App() {
                   value={inputClaim}
                   onChange={(e) => setInputClaim(e.target.value)}
                   disabled={status === 'running'}
-                  className="w-full px-3.5 py-2.5 text-xs bg-slate-950 border border-slate-800 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all disabled:opacity-60"
+                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 focus:outline-none focus:border-cyan-600 dark:focus:border-cyan-500 focus:ring-1 focus:ring-cyan-600/30 dark:focus:ring-cyan-500/30 transition-colors disabled:opacity-60"
                 />
               </div>
 
               {/* Rounds Selector */}
-              <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 shrink-0">
-                <span className="text-[11px] font-mono text-slate-400 pl-1">Rounds:</span>
+              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-2.5 py-1.5 shrink-0">
+                <label htmlFor="rounds-select" className="text-[11px] font-mono text-slate-600 dark:text-slate-400">
+                  Rounds:
+                </label>
                 <select
+                  id="rounds-select"
                   value={selectedMaxRounds}
                   onChange={(e) => setSelectedMaxRounds(Number(e.target.value))}
                   disabled={status === 'running'}
-                  className="bg-transparent text-xs font-mono text-cyan-400 focus:outline-none cursor-pointer pr-1"
+                  className="bg-transparent text-xs font-mono font-medium text-cyan-700 dark:text-cyan-400 focus:outline-none cursor-pointer pr-1"
                 >
-                  <option value={1} className="bg-slate-900 text-slate-200">
-                    1
+                  <option value={1} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-200">
+                    1 Round (Express)
                   </option>
-                  <option value={2} className="bg-slate-900 text-slate-200">
-                    2 (Recommended)
+                  <option value={2} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-200">
+                    2 Rounds (Standard)
+                  </option>
+                  <option value={3} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-200">
+                    3 Rounds (Definitive / Tie-Breaker)
+                  </option>
+                </select>
+              </div>
+
+              {/* Jury Mode Selector */}
+              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-2.5 py-1.5 shrink-0">
+                <label htmlFor="mode-select" className="text-[11px] font-mono text-slate-600 dark:text-slate-400">
+                  Jury:
+                </label>
+                <select
+                  id="mode-select"
+                  value={selectedMode}
+                  onChange={(e) => setSelectedMode(e.target.value as any)}
+                  disabled={status === 'running'}
+                  className="bg-transparent text-xs font-mono font-medium text-cyan-700 dark:text-cyan-400 focus:outline-none cursor-pointer pr-1"
+                >
+                  <option value="general" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-200">
+                    General
+                  </option>
+                  <option value="scientific" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-200">
+                    Scientific
+                  </option>
+                  <option value="financial" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-200">
+                    Financial
+                  </option>
+                  <option value="security" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-200">
+                    Security
                   </option>
                 </select>
               </div>
@@ -213,7 +288,7 @@ export function App() {
               <button
                 type="submit"
                 disabled={status === 'running' || (!inputClaim.trim() && !activeClaim.trim())}
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold bg-cyan-500 hover:bg-cyan-400 text-slate-950 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md shadow-cyan-950 shrink-0"
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-semibold bg-cyan-600 hover:bg-cyan-700 dark:bg-cyan-500 dark:hover:bg-cyan-400 text-white dark:text-slate-950 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm shrink-0"
               >
                 {status === 'running' ? (
                   <>
@@ -231,16 +306,17 @@ export function App() {
               <button
                 type="button"
                 onClick={resetDebate}
-                className="inline-flex items-center justify-center p-2.5 rounded-lg text-slate-400 hover:text-slate-200 bg-slate-950 border border-slate-800 hover:bg-slate-800 transition-colors shrink-0"
+                className="inline-flex items-center justify-center p-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
                 title="Reset session"
+                aria-label="Reset session"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
             </form>
 
             {/* Presets */}
-            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-800/60 text-[11px]">
-              <span className="text-slate-500 font-mono flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200/80 dark:border-slate-800/60 text-[11px]">
+              <span className="text-slate-600 dark:text-slate-400 font-mono flex items-center gap-1 mr-1">
                 <HelpCircle className="w-3 h-3" /> Preset Claims:
               </span>
               {PRESET_CLAIMS.map((preset, idx) => (
@@ -249,7 +325,7 @@ export function App() {
                   type="button"
                   onClick={() => handleSelectPreset(preset.claim)}
                   disabled={status === 'running'}
-                  className="px-2.5 py-1 rounded-md bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-cyan-300 font-mono transition-colors disabled:opacity-50"
+                  className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-cyan-50 dark:bg-slate-950/80 dark:hover:bg-slate-800 border border-slate-200 hover:border-cyan-300 dark:border-slate-800 dark:hover:border-cyan-700 text-slate-700 hover:text-cyan-800 dark:text-slate-300 dark:hover:text-cyan-300 font-mono transition-colors disabled:opacity-50"
                 >
                   {preset.label}
                 </button>
@@ -259,8 +335,8 @@ export function App() {
 
           {/* Error Banner */}
           {errorMessage && (
-            <div className="p-3.5 bg-rose-950/40 border border-rose-500/50 rounded-xl text-rose-300 text-xs flex items-center gap-2.5 shadow-lg">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <div className="p-3.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-500/50 rounded-xl text-rose-800 dark:text-rose-200 text-xs flex items-center gap-2.5 shadow-sm">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
               <div className="flex-1">
                 <span className="font-semibold">Execution Notice: </span>
                 <span>{errorMessage}</span>
@@ -268,7 +344,29 @@ export function App() {
             </div>
           )}
 
-          {/* 5-Node Pipeline Progress */}
+          {/* Active Claim Banner */}
+          {activeClaim && (
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg bg-slate-100/90 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800/80 text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-cyan-700 dark:text-cyan-400 shrink-0 font-semibold">
+                  Proposition:
+                </span>
+                <span className="text-slate-900 dark:text-slate-200 font-medium truncate">
+                  {activeClaim}
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-slate-200/80 dark:bg-slate-800 text-[10px] font-mono uppercase text-slate-700 dark:text-slate-300 shrink-0">
+                  {mode}
+                </span>
+              </div>
+              {threadId && (
+                <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400 shrink-0 hidden md:inline tabular-nums">
+                  Thread: {threadId.slice(0, 8)}...
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* 5-Node Execution Pipeline */}
           <ExecutionGraph
             status={status}
             activeNode={activeNode}
@@ -277,9 +375,10 @@ export function App() {
             maxRounds={maxRounds}
           />
 
-          {/* Judge Verdict & HITL Intervention Gate */}
+          {/* Judge Verdict & HITL Gate */}
           {(verdict || interruptData) && (
             <JudgeVerdictCard
+              claim={activeClaim}
               verdict={verdict}
               interruptData={interruptData}
               onIntervene={intervene}
@@ -287,17 +386,17 @@ export function App() {
             />
           )}
 
-          {/* Courtroom Split (Proponent vs Skeptic) */}
+          {/* Split-Screen Adversarial Courtroom */}
           <CourtroomSplit
             subClaims={subClaims}
             proponentArgs={proponentArgs}
             skepticArgs={skepticArgs}
             evidenceUrls={evidenceUrls}
-            isDebating={status === 'running'}
+            isDebating={status === 'running' && (activeNode === 'proponent_node' || activeNode === 'skeptic_node')}
             currentRound={currentRound}
           />
 
-          {/* Telemetry & SSE State Inspector */}
+          {/* Collapsible Backend Telemetry & State Inspector */}
           <SseInspector
             events={sseEvents}
             graphState={graphStateSnapshot}

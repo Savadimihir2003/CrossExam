@@ -60,7 +60,7 @@ class Settings(BaseSettings):
 
     # Toggles
     ENABLE_PROMPT_GUARD: bool = Field(
-        default=False,
+        default=True,
         description="Whether to run prompt guard check before decomposition",
     )
 

@@ -1,8 +1,12 @@
 export type DebateStatus = 'idle' | 'running' | 'paused' | 'completed' | 'error';
 
+export type JuryMode = 'general' | 'scientific' | 'financial' | 'security';
+
 export type VerdictType = 'SUPPORTED' | 'REFUTED' | 'MIXED' | 'UNVERIFIABLE';
 
 export type ReliabilityRating = 'HIGH' | 'MEDIUM' | 'LOW' | 'QUESTIONABLE';
+
+export type UrlStatus = 'verified_live' | 'unreachable' | 'unverified';
 
 export type SubClaimStatus = 'VERIFIED_TRUE' | 'VERIFIED_FALSE' | 'AMBIGUOUS' | 'UNSUPPORTED';
 
@@ -16,6 +20,8 @@ export interface CitationAuditItem {
   url: string;
   reliability: ReliabilityRating;
   relevance: string;
+  url_status?: UrlStatus;
+  status_code?: number | null;
 }
 
 export interface VerdictData {
@@ -25,6 +31,7 @@ export interface VerdictData {
   claim_breakdown: ClaimBreakdownItem[];
   citation_audit: CitationAuditItem[];
   total_tokens?: number;
+  mode?: JuryMode;
   cached?: boolean;
 }
 
@@ -44,6 +51,8 @@ export interface EvidenceItem {
   title: string;
   url: string;
   snippet: string;
+  url_status?: UrlStatus;
+  status_code?: number | null;
 }
 
 export interface InterruptPayload {
@@ -67,6 +76,7 @@ export interface DebateSummaryItem {
   claim: string;
   status: DebateStatus;
   max_rounds?: number;
+  mode?: JuryMode;
   verdict?: VerdictType | null;
   confidence?: number | null;
   total_tokens: number;

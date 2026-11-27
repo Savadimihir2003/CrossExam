@@ -1,6 +1,7 @@
+from contextlib import asynccontextmanager
 import json
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, AsyncGenerator, Optional
 import aiosqlite
 
 from app.config import settings
@@ -10,17 +11,27 @@ def _current_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+@asynccontextmanager
+async def _connect(path: str) -> AsyncGenerator[aiosqlite.Connection, None]:
+    """Open an aiosqlite connection configured with WAL mode and busy timeout."""
+    async with aiosqlite.connect(path) as db:
+        await db.execute("PRAGMA journal_mode=WAL;")
+        await db.execute("PRAGMA busy_timeout=5000;")
+        yield db
+
+
 async def init_db(db_path: Optional[str] = None) -> None:
     """Initialize the SQLite debates table if it does not exist."""
     path = db_path or settings.DEBATES_DB_PATH
-    async with aiosqlite.connect(path) as db:
+    async with _connect(path) as db:
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS debates (
                 thread_id TEXT PRIMARY KEY,
                 claim TEXT NOT NULL,
                 status TEXT NOT NULL,
-                max_rounds INTEGER DEFAULT 2,
+                max_rounds INTEGER DEFAULT 3,
+                mode TEXT DEFAULT 'general',
                 verdict TEXT,
                 confidence REAL,
                 total_tokens INTEGER DEFAULT 0,
@@ -33,11 +44,14 @@ async def init_db(db_path: Optional[str] = None) -> None:
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_debates_created_at ON debates (created_at DESC);"
         )
-        # Migrate existing schema if table already existed without max_rounds
-        try:
-            await db.execute("ALTER TABLE debates ADD COLUMN max_rounds INTEGER DEFAULT 2;")
-        except Exception:
-            pass
+        for alter_sql in (
+            "ALTER TABLE debates ADD COLUMN max_rounds INTEGER DEFAULT 3;",
+            "ALTER TABLE debates ADD COLUMN mode TEXT DEFAULT 'general';",
+        ):
+            try:
+                await db.execute(alter_sql)
+            except Exception:
+                pass
         await db.commit()
 
 
@@ -45,21 +59,22 @@ async def create_debate(
     thread_id: str,
     claim: str,
     status: str = "running",
-    max_rounds: int = 2,
+    max_rounds: int = 3,
+    mode: str = "general",
     db_path: Optional[str] = None,
 ) -> dict[str, Any]:
     """Create a new debate record in SQLite."""
     path = db_path or settings.DEBATES_DB_PATH
     now = _current_timestamp()
-    async with aiosqlite.connect(path) as db:
+    async with _connect(path) as db:
         await db.execute(
             """
             INSERT INTO debates (
-                thread_id, claim, status, max_rounds, verdict, confidence,
+                thread_id, claim, status, max_rounds, mode, verdict, confidence,
                 total_tokens, report_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, NULL, NULL, 0, NULL, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, NULL, NULL, 0, NULL, ?, ?)
             """,
-            (thread_id, claim, status, max_rounds, now, now),
+            (thread_id, claim, status, max_rounds, mode, now, now),
         )
         await db.commit()
 
@@ -68,6 +83,7 @@ async def create_debate(
         "claim": claim,
         "status": status,
         "max_rounds": max_rounds,
+        "mode": mode,
         "verdict": None,
         "confidence": None,
         "total_tokens": 0,
@@ -136,7 +152,7 @@ async def get_debate(
         db.row_factory = aiosqlite.Row
         async with db.execute(
             """
-            SELECT thread_id, claim, status, max_rounds, verdict, confidence,
+            SELECT thread_id, claim, status, max_rounds, mode, verdict, confidence,
                    total_tokens, report_json, created_at, updated_at
             FROM debates
             WHERE thread_id = ?
@@ -167,7 +183,7 @@ async def list_debates(
         db.row_factory = aiosqlite.Row
         async with db.execute(
             """
-            SELECT thread_id, claim, status, max_rounds, verdict, confidence,
+            SELECT thread_id, claim, status, max_rounds, mode, verdict, confidence,
                    total_tokens, report_json, created_at, updated_at
             FROM debates
             ORDER BY created_at DESC

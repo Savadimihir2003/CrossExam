@@ -5,6 +5,7 @@ import type {
   DebateSummaryItem,
   EvidenceItem,
   InterruptPayload,
+  JuryMode,
   PipelineNodeName,
   SseEventItem,
   VerdictData,
@@ -14,7 +15,8 @@ export function useDebateStream() {
   const [status, setStatus] = useState<DebateStatus>('idle');
   const [threadId, setThreadId] = useState<string | null>(null);
   const [claim, setClaim] = useState<string>('');
-  const [maxRounds, setMaxRounds] = useState<number>(2);
+  const [maxRounds, setMaxRounds] = useState<number>(3);
+  const [mode, setMode] = useState<JuryMode>('general');
   const [currentRound, setCurrentRound] = useState<number>(1);
   const [totalTokens, setTotalTokens] = useState<number>(0);
   const [subClaims, setSubClaims] = useState<string[]>([]);
@@ -30,6 +32,7 @@ export function useDebateStream() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const handleSseEventRef = useRef<(type: string, data: any) => void>(() => {});
 
   // Fetch SQLite debate history
   const fetchHistory = useCallback(async () => {
@@ -85,9 +88,9 @@ export function useDebateStream() {
           if (currentData) {
             try {
               const parsed = JSON.parse(currentData);
-              handleSseEvent(currentEvent, parsed);
+              handleSseEventRef.current(currentEvent, parsed);
             } catch {
-              handleSseEvent(currentEvent, currentData);
+              handleSseEventRef.current(currentEvent, currentData);
             }
           }
           currentEvent = 'message';
@@ -133,7 +136,7 @@ export function useDebateStream() {
         }
 
         case 'argument': {
-          const arg = data as DebateArgument;
+          const arg = data as DebateArgument & { evidence?: EvidenceItem[]; token_usage?: number };
           if (arg.role === 'proponent') {
             setProponentArgs((prev) => {
               const exists = prev.some((p) => p.round === arg.round && p.argument === arg.argument);
@@ -145,7 +148,9 @@ export function useDebateStream() {
               return exists ? prev : [...prev, arg];
             });
           }
-          if (arg.citations && Array.isArray(arg.citations)) {
+          if (Array.isArray(arg.evidence) && arg.evidence.length > 0) {
+            setEvidenceUrls((prev) => [...prev, ...arg.evidence!]);
+          } else if (arg.citations && Array.isArray(arg.citations)) {
             const newEv: EvidenceItem[] = arg.citations.map((c: string) => ({
               role: arg.role,
               round: arg.round,
@@ -154,6 +159,16 @@ export function useDebateStream() {
               snippet: '',
             }));
             setEvidenceUrls((prev) => [...prev, ...newEv]);
+          }
+          if (arg.token_usage) {
+            setTotalTokens((prev) => prev + arg.token_usage!);
+          }
+          break;
+        }
+
+        case 'verdict_preview': {
+          if (data.token_usage) {
+            setTotalTokens((prev) => prev + data.token_usage);
           }
           break;
         }
@@ -198,6 +213,8 @@ export function useDebateStream() {
     },
     [addSseEvent, fetchHistory]
   );
+
+  handleSseEventRef.current = handleSseEvent;
 
   // Consume an SSE stream using fetch and ReadableStream reader
   const consumeStream = useCallback(
@@ -253,7 +270,7 @@ export function useDebateStream() {
 
   // Start new debate
   const startDebate = useCallback(
-    async (targetClaim: string, targetMaxRounds: number = 2) => {
+    async (targetClaim: string, targetMaxRounds: number = 3, targetMode: JuryMode = 'general') => {
       setErrorMessage(null);
       setVerdict(null);
       setInterruptData(null);
@@ -267,13 +284,14 @@ export function useDebateStream() {
       setCurrentRound(1);
       setClaim(targetClaim);
       setMaxRounds(targetMaxRounds);
+      setMode(targetMode);
       setStatus('running');
 
       try {
         const res = await fetch('/api/debates', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ claim: targetClaim, max_rounds: targetMaxRounds }),
+          body: JSON.stringify({ claim: targetClaim, max_rounds: targetMaxRounds, mode: targetMode }),
         });
 
         if (!res.ok) {
@@ -284,6 +302,11 @@ export function useDebateStream() {
         const data = await res.json();
         const newThreadId = data.thread_id;
         setThreadId(newThreadId);
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.set('thread', newThreadId);
+          window.history.replaceState({}, '', url.toString());
+        } catch {}
         fetchHistory();
 
         // Connect SSE stream
@@ -335,7 +358,13 @@ export function useDebateStream() {
         setClaim(debate.claim);
         setStatus(debate.status as DebateStatus);
         setTotalTokens(debate.total_tokens || 0);
-        setMaxRounds(debate.max_rounds || 2);
+        setMaxRounds(debate.max_rounds || 3);
+        setMode((debate.mode || debate.report?.mode || 'general') as JuryMode);
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.set('thread', debate.thread_id);
+          window.history.replaceState({}, '', url.toString());
+        } catch {}
 
         const report = debate.report || {};
         setSubClaims(report.sub_claims || []);
@@ -426,13 +455,30 @@ export function useDebateStream() {
     setInterruptData(null);
     setSseEvents([]);
     setErrorMessage(null);
+    setMode('general');
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('thread');
+      window.history.replaceState({}, '', url.toString());
+    } catch {}
   }, []);
+
+  // Auto-load ?thread=<id> permalink on initial mount
+  useEffect(() => {
+    try {
+      const sharedThread = new URLSearchParams(window.location.search).get('thread');
+      if (sharedThread) {
+        loadDebate(sharedThread);
+      }
+    } catch {}
+  }, [loadDebate]);
 
   return {
     status,
     threadId,
     claim,
     maxRounds,
+    mode,
     currentRound,
     totalTokens,
     subClaims,

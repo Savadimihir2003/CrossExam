@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 import json
 import logging
-from typing import Any, AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, Literal, Optional
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query
@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
+from app.config import settings
 from app.db.sqlite import create_debate, get_debate, list_debates, update_debate
 from app.graph.workflow import create_debate_graph, get_checkpointer
 
@@ -33,7 +34,10 @@ def format_sse(event: str, data: Any) -> str:
 
 class CreateDebateRequest(BaseModel):
     claim: str = Field(..., min_length=3, description="Core claim to fact-check")
-    max_rounds: int = Field(default=2, ge=1, le=4, description="Max debate rounds")
+    max_rounds: int = Field(default=3, ge=1, le=4, description="Max debate rounds")
+    mode: Literal["general", "scientific", "financial", "security"] = Field(
+        default="general", description="Domain jury framing mode"
+    )
 
 
 class InterveneRequest(BaseModel):
@@ -83,8 +87,17 @@ async def debate_event_stream(
         return
 
     claim = debate_record.get("claim", "")
-    configured_max_rounds = int(debate_record.get("max_rounds") or 2)
+    configured_max_rounds = int(debate_record.get("max_rounds") or 3)
+    configured_mode = str(debate_record.get("mode") or "general")
     config = {"configurable": {"thread_id": thread_id}}
+
+    try:
+        settings.validate_groq_api_key()
+    except RuntimeError as key_err:
+        err_msg = str(key_err)
+        await update_debate(thread_id, status="error", report_json={"error": err_msg})
+        yield format_sse("error", {"message": err_msg, "timestamp": _iso()})
+        return
 
     async with get_checkpointer() as checkpointer:
         graph = create_debate_graph().compile(checkpointer=checkpointer)
@@ -109,6 +122,7 @@ async def debate_event_stream(
                     initial_state = {
                         "thread_id": thread_id,
                         "raw_claim": claim,
+                        "mode": configured_mode,
                         "sub_claims": [],
                         "round": 1,
                         "max_rounds": configured_max_rounds,
@@ -132,12 +146,30 @@ async def debate_event_stream(
                 if "__interrupt__" in chunk:
                     has_interrupted = True
                     interrupt_val = chunk["__interrupt__"][0].value
+                    paused_state = await graph.aget_state(config)
+                    p_vals = paused_state.values if paused_state else {}
+                    p_verdict = p_vals.get("verdict") or {}
+                    p_tokens = p_vals.get("token_usage", 0)
                     await update_debate(
                         thread_id,
                         status="paused",
+                        verdict=p_verdict.get("verdict"),
+                        confidence=interrupt_val.get("confidence", p_verdict.get("confidence")),
+                        total_tokens=p_tokens,
                         report_json={
+                            "raw_claim": claim,
+                            "mode": configured_mode,
+                            "sub_claims": p_vals.get("sub_claims", []),
+                            "verdict": p_verdict.get("verdict"),
+                            "confidence": interrupt_val.get("confidence", p_verdict.get("confidence")),
+                            "summary": p_verdict.get("summary", interrupt_val.get("summary", "")),
+                            "claim_breakdown": p_verdict.get("claim_breakdown", []),
+                            "citation_audit": p_verdict.get("citation_audit", []),
+                            "proponent_args": p_vals.get("proponent_args", []),
+                            "skeptic_args": p_vals.get("skeptic_args", []),
+                            "evidence_urls": p_vals.get("evidence_urls", []),
+                            "total_tokens": p_tokens,
                             "reason": interrupt_val.get("reason"),
-                            "confidence": interrupt_val.get("confidence"),
                             "question": interrupt_val.get("question"),
                         },
                     )
@@ -170,29 +202,23 @@ async def debate_event_stream(
                             "token_usage": updates.get("token_usage", 0),
                         })
 
-                    elif node_name == "proponent_node":
-                        args = updates.get("proponent_args", [])
+                    elif node_name in ("proponent_node", "skeptic_node"):
+                        role_key = "proponent_args" if node_name == "proponent_node" else "skeptic_args"
+                        role_name = "proponent" if node_name == "proponent_node" else "skeptic"
+                        args = updates.get(role_key, [])
                         if args:
                             arg = args[-1]
                             yield format_sse("tool_call", {
-                                "role": "proponent",
+                                "role": role_name,
                                 "query": arg.get("search_query", ""),
                                 "round": arg.get("round", 1),
                                 "model": arg.get("model", ""),
                             })
-                            yield format_sse("argument", {**arg})
-
-                    elif node_name == "skeptic_node":
-                        args = updates.get("skeptic_args", [])
-                        if args:
-                            arg = args[-1]
-                            yield format_sse("tool_call", {
-                                "role": "skeptic",
-                                "query": arg.get("search_query", ""),
-                                "round": arg.get("round", 1),
-                                "model": arg.get("model", ""),
+                            yield format_sse("argument", {
+                                **arg,
+                                "evidence": updates.get("evidence_urls", []),
+                                "token_usage": updates.get("token_usage", 0),
                             })
-                            yield format_sse("argument", {**arg})
 
                     elif node_name == "moderator_node":
                         yield format_sse("round_complete", {
@@ -205,6 +231,7 @@ async def debate_event_stream(
                         yield format_sse("verdict_preview", {
                             "verdict": verdict.get("verdict"),
                             "confidence": verdict.get("confidence"),
+                            "token_usage": updates.get("token_usage", 0),
                         })
 
             # Check if execution finished without interrupt
@@ -217,30 +244,6 @@ async def debate_event_stream(
                 verdict_str = verdict_obj.get("verdict", "MIXED")
                 conf_val = verdict_obj.get("confidence", 0.5)
 
-                full_report = {
-                    "raw_claim": claim,
-                    "sub_claims": values.get("sub_claims", []),
-                    "verdict": verdict_str,
-                    "confidence": conf_val,
-                    "summary": verdict_obj.get("summary", ""),
-                    "claim_breakdown": verdict_obj.get("claim_breakdown", []),
-                    "citation_audit": verdict_obj.get("citation_audit", []),
-                    "proponent_args": values.get("proponent_args", []),
-                    "skeptic_args": values.get("skeptic_args", []),
-                    "evidence_urls": values.get("evidence_urls", []),
-                    "human_context": values.get("human_context"),
-                    "total_tokens": total_tokens,
-                }
-
-                await update_debate(
-                    thread_id,
-                    status="completed",
-                    verdict=verdict_str,
-                    confidence=conf_val,
-                    total_tokens=total_tokens,
-                    report_json=full_report,
-                )
-
                 yield format_sse("final_verdict", {
                     "thread_id": thread_id,
                     "verdict": verdict_str,
@@ -249,6 +252,7 @@ async def debate_event_stream(
                     "claim_breakdown": verdict_obj.get("claim_breakdown", []),
                     "citation_audit": verdict_obj.get("citation_audit", []),
                     "total_tokens": total_tokens,
+                    "mode": configured_mode,
                     "timestamp": _iso(),
                 })
 
@@ -271,12 +275,14 @@ async def create_debate_endpoint(payload: CreateDebateRequest) -> dict[str, Any]
         thread_id=thread_id,
         claim=payload.claim.strip(),
         max_rounds=payload.max_rounds,
+        mode=payload.mode,
     )
     return {
         "thread_id": thread_id,
         "claim": record["claim"],
         "status": record["status"],
         "max_rounds": payload.max_rounds,
+        "mode": payload.mode,
         "created_at": record["created_at"],
     }
 

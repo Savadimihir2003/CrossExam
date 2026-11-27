@@ -144,29 +144,35 @@ All Groq invocations are wrapped with **`tenacity` exponential backoff retries**
 
 ## 💡 Core Engineering Highlights
 
-### 1. Dual-Database SQLite Architecture
+### 1. Dual-Database SQLite Architecture (WAL-Enabled)
 
 - **`checkpoints.db` (`AsyncSqliteSaver`):** LangGraph's native thread-scoped checkpointer. Tracks execution checkpoints per `thread_id`, enabling zero-loss `interrupt()` and seamless graph resumption via `Command(resume=...)`.
-- **`debates.db` (Async SQLite Repository):** Relational application table storing debate history (`thread_id`, `claim`, `status`, `verdict`, `confidence`, `total_tokens`, `report_json`, `created_at`, `max_rounds`). Enables instant history reloads and UI hydration.
+- **`debates.db` (Async SQLite Repository):** WAL-enabled relational table storing debate history (`thread_id`, `claim`, `status`, `max_rounds`, `mode`, `verdict`, `confidence`, `total_tokens`, `report_json`, `created_at`). Persists both completed and paused HITL states across restarts.
 
-### 2. Context Isolation & Token Control
+### 2. Domain Jury Modes & Live URL Verification
 
-- Round 1 provides each debater only with the atomic sub-claims.
+- **4 Specialized Jury Modes:** `general`, `scientific` (PubMed/arXiv/peer-reviewed bias), `financial` (SEC/earnings/macro data), and `security` (CVEs/NVD/OWASP) tailor both web search queries and Chief Judge evaluation criteria.
+- **Live HTTP Reachability Audit:** Before the Judge scores `citation_audit`, `verifier.py` concurrently checks cited URLs over HTTP (`HEAD`/`GET`) to flag `LIVE` (`200`) vs `UNREACHABLE` (`404`/dead) sources.
+
+### 3. Context Isolation & Real Token Telemetry
+
+- Round 1 provides each debater only with the atomic sub-claims and dynamically generated queries.
 - Round 2+ passes a **sliding window**: debaters receive _only_ the opponent's previous argument and sub-claims—eliminating recursive token bloat and staying under Groq's 8K TPM threshold.
+- Structured outputs capture real Groq `token_usage` metadata and automatically fall back to `json_mode` if tool-call validation fails.
 
-### 3. Defensive Web Search & Text Sanitization
+### 4. Defensive Web Search & Text Sanitization
 
-- `DuckDuckGoSearch` wrapped with strict timeouts, empty-query fallbacks, and connection error guards.
+- `ddgs` DuckDuckGo search wrapped with strict timeouts, empty-query fallbacks, and connection error guards.
 - Two-pass sanitization: unescapes HTML entities (`&lt;b&gt;`), strips raw tags (`<[^>]+>`), unescapes again, and truncates snippets to ~120 words to avoid context contamination.
 
-### 4. Real-Time Server-Sent Events (SSE) Engine
+### 5. Real-Time Server-Sent Events (SSE) Engine
 
 - The backend emits structured, typed SSE events throughout graph execution:
-  - `node_start` / `node_complete`: Real-time pipeline status updates.
+  - `node_start` / `guard_alert`: Real-time pipeline status & prompt-guard alerts.
   - `tool_call`: Live DuckDuckGo queries and retrieved source pills.
-  - `argument`: Streaming debater text and citations.
+  - `argument`: Streaming debater text, citations, evidence metadata, and live token updates.
   - `interrupt`: Signals UI that human intervention is required (`confidence < 0.75`).
-  - `final_verdict`: Complete `VerdictSchema` JSON payload.
+  - `final_verdict`: Complete `VerdictSchema` JSON payload with audited citations.
 
 ---
 
@@ -181,7 +187,7 @@ CrossExam/
 │   │   │   └── routes.py         # REST + SSE endpoints (/api/debates, /stream, /intervene)
 │   │   ├── db/
 │   │   │   ├── __init__.py
-│   │   │   └── sqlite.py         # Async SQLite CRUD & auto-migrations
+│   │   │   └── sqlite.py         # Async WAL SQLite CRUD & auto-migrations
 │   │   ├── graph/
 │   │   │   ├── __init__.py
 │   │   │   ├── nodes.py          # Guard, Decomposer, Proponent, Skeptic, Moderator, Judge, HITL
@@ -189,12 +195,20 @@ CrossExam/
 │   │   │   └── workflow.py       # StateGraph builder + AsyncSqliteSaver
 │   │   ├── tools/
 │   │   │   ├── __init__.py
-│   │   │   └── search.py         # Defensive DuckDuckGo search & entity cleaner
+│   │   │   ├── search.py         # Defensive DuckDuckGo search & entity cleaner
+│   │   │   └── verifier.py       # Async HTTP URL reachability verifier
+│   │   ├── cli.py                # Terminal runner (python -m app.cli)
+│   │   ├── mcp_server.py         # Zero-dependency stdio MCP server
 │   │   ├── config.py             # Pydantic BaseSettings for Groq & SQLite paths
 │   │   └── main.py               # FastAPI lifespan, CORS, & route mounting
 │   ├── tests/
 │   │   ├── __init__.py
-│   │   └── test_graph.py         # 16 Pytest integration & unit tests
+│   │   ├── conftest.py           # Autouse live-API guard
+│   │   ├── test_sqlite.py        # SQLite WAL CRUD & Jury Mode tests
+│   │   ├── test_tools.py         # DuckDuckGo & HTTP URL verifier tests
+│   │   ├── test_nodes.py         # Guard, Decomposer, Send(), Moderator & fallback tests
+│   │   ├── test_workflow_e2e.py  # 1-3 round E2E graph & HITL interrupt/resume tests
+│   │   └── test_api_and_mcp.py   # FastAPI REST/SSE & MCP server dispatch tests
 │   ├── .env.example              # Template for environment configuration
 │   ├── pytest.ini                # Pytest configuration with asyncio support
 │   └── requirements.txt          # Pinned backend dependencies
@@ -204,14 +218,15 @@ CrossExam/
 │   │   │   ├── CourtroomSplit.tsx    # Proponent vs. Skeptic streaming debate cards
 │   │   │   ├── ExecutionGraph.tsx    # 5-stage live status pipeline bar
 │   │   │   ├── HistorySidebar.tsx    # Saved & paused debates archive drawer
-│   │   │   ├── JudgeVerdictCard.tsx  # Final verdict card & inline HITL intervention
+│   │   │   ├── JudgeVerdictCard.tsx  # Verdict, export (.md/JSON) & HITL intervention
 │   │   │   └── SseInspector.tsx      # Live SSE event telemetry & state viewer
 │   │   ├── hooks/
-│   │   │   └── useDebateStream.ts    # SSE event management & REST state hook
+│   │   │   ├── useDebateStream.ts    # SSE event management, URL sync & REST hook
+│   │   │   └── useTheme.ts           # Dual-mode Light & Dark theme hook
 │   │   ├── types/
 │   │   │   └── debate.ts             # Strict TypeScript types matching backend schemas
-│   │   ├── App.tsx                   # Dark-mode War-Room dashboard
-│   │   └── index.css                 # Custom Tailwind CSS styling
+│   │   ├── App.tsx                   # Dual-mode War-Room dashboard
+│   │   └── index.css                 # Semantic Light/Dark CSS tokens & Tailwind CSS
 │   ├── package.json
 │   ├── tailwind.config.js
 │   └── vite.config.ts
@@ -285,7 +300,7 @@ Open `http://localhost:3000` (or `http://localhost:5173`) in your browser to ent
 
 | Method | Endpoint                             | Description                                                                                                                               |
 | :----- | :----------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST` | `/api/debates`                       | Accepts `{ "claim": str, "max_rounds": int }`. Initializes debate in SQLite and returns `{ "thread_id": str }`.                           |
+| `POST` | `/api/debates`                       | Accepts `{ "claim": str, "max_rounds": int, "mode": str }`. Initializes debate in SQLite and returns `{ "thread_id": str }`. |
 | `GET`  | `/api/debates`                       | Fetches recent debate records from `debates.db` for sidebar history.                                                                      |
 | `GET`  | `/api/debates/{thread_id}`           | Retrieves a complete persisted debate record by ID.                                                                                       |
 | `GET`  | `/api/debates/{thread_id}/stream`    | SSE endpoint streaming real-time events (`node_start`, `tool_call`, `argument`, `round_complete`, `interrupt`, `final_verdict`, `error`). |
@@ -296,16 +311,21 @@ Open `http://localhost:3000` (or `http://localhost:5173`) in your browser to ent
 
 ## 🧪 Verification & Automated Test Suite
 
-CrossExam includes an extensive automated test suite (`backend/tests/test_graph.py`) testing the entire system offline using mocked LLM responses and realistic payloads.
+CrossExam includes a modular, feature-wise automated test suite (`backend/tests/`) that mocks all LLM, search, and HTTP calls so zero live API calls are made.
 
-Run tests using the backend virtual environment:
+Run all tests or individual feature files from `backend/`:
 
 ```bash
 cd backend
-.venv\Scripts\pytest -v tests/test_graph.py
+# Run all feature suites together:
+.venv\Scripts\pytest tests/ -v
+
+# Or run an individual feature suite:
+.venv\Scripts\pytest tests/test_nodes.py -v
+.venv\Scripts\pytest tests/test_workflow_e2e.py -v
 ```
 
-### 16 Test Cases Passed:
+### 21 Test Cases Passed:
 
 1. `test_sqlite_persistence`: Async SQLite CRUD, thread isolation, and `max_rounds` persistence.
 2. `test_search_clean_text`: HTML entity unescaping (`&lt;b&gt;`) and raw tag removal.
@@ -322,20 +342,39 @@ cd backend
 13. `test_missing_groq_api_key_fails_gracefully`: Graceful degradation and descriptive error responses.
 14. `test_full_debate_graph_1_round_execution`: Complete end-to-end graph cycle for 1-round debates.
 15. `test_full_debate_graph_2_rounds_execution`: Complete end-to-end graph cycle for 2-round debates.
-16. `test_full_debate_graph_prompt_injection_halts_early`: Zero-token expenditure on injection attempts.
+16. `test_full_debate_graph_3_rounds_execution`: Complete end-to-end graph cycle for 3-round debates (odd tie-breaker).
+17. `test_full_debate_graph_prompt_injection_halts_early`: Zero-token expenditure on injection attempts.
+18. `test_stream_missing_key_emits_error_and_persists`: Missing API key emits SSE `error` and persists `status="error"`.
+19. `test_url_reachability_verifier`: Live HTTP reachability check (`verified_live` vs `unreachable` vs `unverified`).
+20. `test_jury_mode_api_persistence`: Jury mode persistence across `POST /api/debates` and SQLite.
+21. `test_mcp_server_dispatch`: Zero-dependency MCP stdio JSON-RPC `initialize`, `tools/list`, and `tools/call`.
 
 ---
 
-## 🖥️ Frontend War-Room Architecture
+## 💻 CLI & MCP Integration
 
-The user interface is engineered to evoke an intelligence war-room:
+Run CrossExam directly from your terminal:
 
-- **Telemetry Header:** Real-time round tracking, cumulative token usage meter, and connection badge.
+```bash
+cd backend
+.venv\Scripts\python -m app.cli "Commercial nuclear fusion provides net grid electricity." --rounds 3 --mode scientific
+```
+
+Or mount `backend/app/mcp_server.py` as a stdio **MCP Server** in Cursor, Claude Code, or Antigravity to expose `verify_claim` and `list_recent_debates` directly to your coding agent.
+
+---
+
+## 🖥️ Frontend War-Room Architecture (Light & Dark Mode)
+
+The user interface ships with dual-mode Light & Dark parity while preserving the intelligence war-room aesthetic:
+
+- **Telemetry Header:** Real-time round tracking, cumulative token usage meter, status badge, and Sun/Moon theme toggle.
+- **Claim Bar & Jury Selector:** 8 one-click preset claims, `1 / 2 / 3` round selector, and `General / Scientific / Financial / Security` Jury Mode selector.
 - **5-Node Execution Graph (`ExecutionGraph.tsx`):** Visualizes live progress across `Decomposer` → `Debaters (Parallel)` → `Moderator` → `Chief Judge` → `HITL Gate`.
-- **Courtroom Split (`CourtroomSplit.tsx`):** Side-by-side blue (Proponent) and red (Skeptic) columns displaying round badges, active search query pills, and interactive citation popovers.
-- **Chief Judge Verdict Card (`JudgeVerdictCard.tsx`):** Prominently renders verdicts (`SUPPORTED`, `REFUTED`, `MIXED`, `UNVERIFIABLE`), confidence meters, sub-claim breakdowns, citation audits, and an inline amber human-intervention form when the graph pauses.
+- **Courtroom Split (`CourtroomSplit.tsx`):** Side-by-side blue (Proponent) and red (Skeptic) columns displaying round badges, search query pills, and live citation verification indicators.
+- **Chief Judge Verdict Card (`JudgeVerdictCard.tsx`):** Renders verdicts, confidence meters, sub-claim breakdowns, HTTP-verified citation audits, `.md` / `JSON` dossier export, and an inline amber HITL intervention form when paused.
 - **Backend Inspector (`SseInspector.tsx`):** Inspect raw SSE event stream messages and examine the live LangGraph state tree in real time.
-- **History Sidebar (`HistorySidebar.tsx`):** Search, browse, and re-hydrate past and paused debates from SQLite.
+- **History Sidebar (`HistorySidebar.tsx`):** Search, browse, and re-hydrate past and paused debates (synced with `?thread=<id>` permalinks).
 
 ---
 
