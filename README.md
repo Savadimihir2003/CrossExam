@@ -13,9 +13,9 @@
 
 ## 🎬 Live Demo Walkthrough
 
-<video src="assets/crossexam-demo.mp4" controls width="100%"></video>
+![CrossExam Live Demo Walkthrough](assets/crossexam-demo.gif)
 
-> 📺 **[Watch / Download Full Demo Walkthrough (`assets/crossexam-demo.mp4`)](assets/crossexam-demo.mp4)** — End-to-end demonstration of multi-round adversarial debate, live DuckDuckGo grounding, Chief Judge verdict synthesis, and Light/Dark War-Room UI.
+> 📺 **[Download Full HD Walkthrough (`assets/crossexam-demo.mp4`)](assets/crossexam-demo.mp4)** — End-to-end demonstration of multi-round adversarial debate, live DuckDuckGo grounding, Chief Judge verdict synthesis, and Light/Dark War-Room UI.
 
 ---
 
