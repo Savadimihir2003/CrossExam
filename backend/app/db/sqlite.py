@@ -32,6 +32,7 @@ async def init_db(db_path: Optional[str] = None) -> None:
                 status TEXT NOT NULL,
                 max_rounds INTEGER DEFAULT 3,
                 mode TEXT DEFAULT 'general',
+                session_id TEXT,
                 verdict TEXT,
                 confidence REAL,
                 total_tokens INTEGER DEFAULT 0,
@@ -47,11 +48,15 @@ async def init_db(db_path: Optional[str] = None) -> None:
         for alter_sql in (
             "ALTER TABLE debates ADD COLUMN max_rounds INTEGER DEFAULT 3;",
             "ALTER TABLE debates ADD COLUMN mode TEXT DEFAULT 'general';",
+            "ALTER TABLE debates ADD COLUMN session_id TEXT;",
         ):
             try:
                 await db.execute(alter_sql)
             except Exception:
                 pass
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_debates_session_id ON debates (session_id);"
+        )
         await db.commit()
 
 
@@ -61,6 +66,7 @@ async def create_debate(
     status: str = "running",
     max_rounds: int = 3,
     mode: str = "general",
+    session_id: Optional[str] = None,
     db_path: Optional[str] = None,
 ) -> dict[str, Any]:
     """Create a new debate record in SQLite."""
@@ -70,11 +76,11 @@ async def create_debate(
         await db.execute(
             """
             INSERT INTO debates (
-                thread_id, claim, status, max_rounds, mode, verdict, confidence,
+                thread_id, claim, status, max_rounds, mode, session_id, verdict, confidence,
                 total_tokens, report_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, NULL, NULL, 0, NULL, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 0, NULL, ?, ?)
             """,
-            (thread_id, claim, status, max_rounds, mode, now, now),
+            (thread_id, claim, status, max_rounds, mode, session_id, now, now),
         )
         await db.commit()
 
@@ -84,6 +90,7 @@ async def create_debate(
         "status": status,
         "max_rounds": max_rounds,
         "mode": mode,
+        "session_id": session_id,
         "verdict": None,
         "confidence": None,
         "total_tokens": 0,
@@ -175,22 +182,33 @@ async def get_debate(
 
 async def list_debates(
     limit: int = 50,
+    session_id: Optional[str] = None,
     db_path: Optional[str] = None,
 ) -> list[dict[str, Any]]:
-    """List recent debates ordered by creation time descending."""
+    """List recent debates ordered by creation time descending, optionally filtered by session_id."""
     path = db_path or settings.DEBATES_DB_PATH
-    async with aiosqlite.connect(path) as db:
+    async with _connect(path) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute(
+        if session_id:
+            sql = """
+            SELECT thread_id, claim, status, max_rounds, mode, session_id, verdict, confidence,
+                   total_tokens, report_json, created_at, updated_at
+            FROM debates
+            WHERE (session_id = ? OR session_id IS NULL)
+            ORDER BY created_at DESC
+            LIMIT ?
             """
-            SELECT thread_id, claim, status, max_rounds, mode, verdict, confidence,
+            params: tuple[Any, ...] = (session_id, limit)
+        else:
+            sql = """
+            SELECT thread_id, claim, status, max_rounds, mode, session_id, verdict, confidence,
                    total_tokens, report_json, created_at, updated_at
             FROM debates
             ORDER BY created_at DESC
             LIMIT ?
-            """,
-            (limit,),
-        ) as cursor:
+            """
+            params = (limit,)
+        async with db.execute(sql, params) as cursor:
             rows = await cursor.fetchall()
             results = []
             for row in rows:

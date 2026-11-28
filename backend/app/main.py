@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import router as debates_router
+from app.api.routes import config_router, router as debates_router
 from app.config import settings
 from app.db.sqlite import init_db
 
@@ -40,8 +40,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount debates API
+# Mount debates and config APIs
 app.include_router(debates_router)
+app.include_router(config_router)
 
 
 @app.get("/health")

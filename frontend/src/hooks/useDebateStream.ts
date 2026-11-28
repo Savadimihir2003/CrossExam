@@ -1,15 +1,65 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type {
+  ApiSettings,
   DebateArgument,
   DebateStatus,
   DebateSummaryItem,
   EvidenceItem,
   InterruptPayload,
   JuryMode,
+  ModelSlots,
   PipelineNodeName,
+  ServerConfig,
   SseEventItem,
   VerdictData,
 } from '../types/debate';
+
+const DEFAULT_MODEL_SLOTS: ModelSlots = {
+  guard: 'meta-llama/llama-prompt-guard-2-22m',
+  decomposer: 'openai/gpt-oss-20b',
+  proponent: 'qwen/qwen3.8-27b',
+  skeptic: 'openai/gpt-oss-20b',
+  judge: 'openai/gpt-oss-120b',
+};
+
+const SESSION_ID_KEY = 'crossexam_session_id';
+const BYOAK_SETTINGS_KEY = 'crossexam_byoak_settings';
+
+function getOrCreateSessionId(): string {
+  try {
+    const existing = sessionStorage.getItem(SESSION_ID_KEY);
+    if (existing) return existing;
+    const generated =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `sess-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    sessionStorage.setItem(SESSION_ID_KEY, generated);
+    return generated;
+  } catch {
+    return 'default-session';
+  }
+}
+
+function loadInitialApiSettings(): ApiSettings {
+  try {
+    const raw = sessionStorage.getItem(BYOAK_SETTINGS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        apiKey: typeof parsed.apiKey === 'string' ? parsed.apiKey : '',
+        provider: 'groq',
+        modelPreset: parsed.modelPreset || 'balanced',
+        customModels: { ...DEFAULT_MODEL_SLOTS, ...(parsed.customModels || {}) },
+      };
+    }
+  } catch {}
+  return {
+    apiKey: '',
+    provider: 'groq',
+    modelPreset: 'balanced',
+    customModels: { ...DEFAULT_MODEL_SLOTS },
+  };
+}
 
 export function useDebateStream() {
   const [status, setStatus] = useState<DebateStatus>('idle');
@@ -30,14 +80,95 @@ export function useDebateStream() {
   const [sseEvents, setSseEvents] = useState<SseEventItem[]>([]);
   const [history, setHistory] = useState<DebateSummaryItem[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [serverKeyConfigured, setServerKeyConfigured] = useState<boolean>(true);
+  const [defaultModels, setDefaultModels] = useState<ModelSlots>(DEFAULT_MODEL_SLOTS);
+  const [apiSettings, setApiSettings] = useState<ApiSettings>(loadInitialApiSettings);
 
+  const sessionIdRef = useRef<string>(getOrCreateSessionId());
   const abortControllerRef = useRef<AbortController | null>(null);
   const handleSseEventRef = useRef<(type: string, data: any) => void>(() => {});
 
-  // Fetch SQLite debate history
+  const updateApiSettings = useCallback((patch: Partial<ApiSettings>) => {
+    setApiSettings((prev) => {
+      const next: ApiSettings = {
+        ...prev,
+        ...patch,
+        customModels: {
+          ...prev.customModels,
+          ...(patch.customModels || {}),
+        },
+      };
+      try {
+        sessionStorage.setItem(BYOAK_SETTINGS_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  const clearApiKey = useCallback(() => {
+    updateApiSettings({ apiKey: '' });
+  }, [updateApiSettings]);
+
+  const validateApiKey = useCallback(async (candidateKey: string): Promise<{ valid: boolean; error?: string }> => {
+    try {
+      const res = await fetch('/api/validate-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: candidateKey, provider: 'groq' }),
+      });
+      if (!res.ok) {
+        return { valid: false, error: `Validation request failed (${res.status})` };
+      }
+      return await res.json();
+    } catch (err: any) {
+      return { valid: false, error: err.message || 'Network error while validating key' };
+    }
+  }, []);
+
+  const buildByoakHeaders = useCallback((overrideTemp?: number): Record<string, string> => {
+    const headers: Record<string, string> = {
+      'X-Session-ID': sessionIdRef.current,
+    };
+    if (apiSettings.apiKey.trim()) {
+      headers['X-API-Key'] = apiSettings.apiKey.trim();
+    }
+    if (apiSettings.modelPreset) {
+      headers['X-Model-Preset'] = apiSettings.modelPreset;
+    }
+    if (apiSettings.modelPreset === 'custom') {
+      headers['X-Models'] = JSON.stringify(apiSettings.customModels);
+    }
+    if (typeof overrideTemp === 'number') {
+      headers['X-Temperature'] = String(Math.max(0, Math.min(0.7, overrideTemp)));
+    }
+    return headers;
+  }, [apiSettings]);
+
+  // Fetch server BYOAK config on mount
+  useEffect(() => {
+    fetch('/api/config')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((cfg: ServerConfig | null) => {
+        if (!cfg) return;
+        setServerKeyConfigured(Boolean(cfg.server_key_configured));
+        if (cfg.default_models) {
+          setDefaultModels(cfg.default_models);
+          setApiSettings((prev) => {
+            const hasSavedCustom = sessionStorage.getItem(BYOAK_SETTINGS_KEY);
+            if (hasSavedCustom) return prev;
+            return { ...prev, customModels: cfg.default_models };
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Fetch SQLite debate history scoped to this browser session
   const fetchHistory = useCallback(async () => {
     try {
-      const res = await fetch('/api/debates?limit=50');
+      const res = await fetch('/api/debates?limit=50', {
+        headers: { 'X-Session-ID': sessionIdRef.current },
+      });
       if (res.ok) {
         const data = await res.json();
         setHistory(data);
@@ -270,7 +401,12 @@ export function useDebateStream() {
 
   // Start new debate
   const startDebate = useCallback(
-    async (targetClaim: string, targetMaxRounds: number = 3, targetMode: JuryMode = 'general') => {
+    async (
+      targetClaim: string,
+      targetMaxRounds: number = 3,
+      targetMode: JuryMode = 'general',
+      targetTemperature: number = 0.2
+    ) => {
       setErrorMessage(null);
       setVerdict(null);
       setInterruptData(null);
@@ -290,7 +426,10 @@ export function useDebateStream() {
       try {
         const res = await fetch('/api/debates', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Session-ID': sessionIdRef.current,
+          },
           body: JSON.stringify({ claim: targetClaim, max_rounds: targetMaxRounds, mode: targetMode }),
         });
 
@@ -309,14 +448,16 @@ export function useDebateStream() {
         } catch {}
         fetchHistory();
 
-        // Connect SSE stream
-        consumeStream(`/api/debates/${newThreadId}/stream`);
+        // Connect SSE stream with BYOAK headers (in-memory only, never stored)
+        consumeStream(`/api/debates/${newThreadId}/stream`, {
+          headers: buildByoakHeaders(targetTemperature),
+        });
       } catch (err: any) {
         setStatus('error');
         setErrorMessage(err.message || 'Failed to start debate');
       }
     },
-    [consumeStream, fetchHistory]
+    [consumeStream, fetchHistory, buildByoakHeaders]
   );
 
   // Intervene in paused debate
@@ -331,11 +472,14 @@ export function useDebateStream() {
       // Post intervention and consume resume SSE stream
       consumeStream(`/api/debates/${threadId}/intervene`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...buildByoakHeaders(),
+        },
         body: JSON.stringify({ human_context: humanContext }),
       });
     },
-    [threadId, consumeStream]
+    [threadId, consumeStream, buildByoakHeaders]
   );
 
   // Load an existing debate from history
@@ -492,6 +636,12 @@ export function useDebateStream() {
     sseEvents,
     history,
     errorMessage,
+    serverKeyConfigured,
+    defaultModels,
+    apiSettings,
+    updateApiSettings,
+    clearApiKey,
+    validateApiKey,
     startDebate,
     intervene,
     loadDebate,
