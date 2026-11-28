@@ -359,12 +359,12 @@ export const JudgeVerdictCard: React.FC<JudgeVerdictCardProps> = ({
                       key={idx}
                       className="bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800/80 rounded-lg p-2.5 space-y-1"
                     >
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2">
                         <a
                           href={cite.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[11px] font-mono text-cyan-700 hover:text-cyan-900 dark:text-cyan-400 dark:hover:text-cyan-300 truncate inline-flex items-center gap-1"
+                          className="text-[11px] font-mono text-cyan-700 hover:text-cyan-900 dark:text-cyan-400 dark:hover:text-cyan-300 truncate inline-flex items-center gap-1 min-w-0 max-w-full"
                         >
                           <ExternalLink className="w-3 h-3 shrink-0" />
                           <span className="truncate">{cite.url.replace(/^https?:\/\//, '')}</span>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -25,6 +25,8 @@ export const CourtroomSplit: React.FC<CourtroomSplitProps> = ({
   evidenceUrls = [],
   isDebating,
 }) => {
+  const [mobileView, setMobileView] = useState<'all' | 'proponent' | 'skeptic'>('all');
+
   const getEvidenceMetadata = (url: string) => {
     return evidenceUrls.find((e) => e.url === url);
   };
@@ -54,18 +56,47 @@ export const CourtroomSplit: React.FC<CourtroomSplitProps> = ({
         </div>
       )}
 
+      {/* Mobile / Tablet View Switcher */}
+      <div className="flex lg:hidden items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+        {[
+          { id: 'all' as const, label: 'Both Sides' },
+          { id: 'proponent' as const, label: `Proponent (${proponentArgs.length})` },
+          { id: 'skeptic' as const, label: `Skeptic (${skepticArgs.length})` },
+        ].map((tab) => {
+          const active = mobileView === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setMobileView(tab.id)}
+              className={`flex-1 py-2 px-2 rounded-lg text-[11px] font-mono font-semibold transition-colors ${
+                active
+                  ? 'bg-white dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Split Courtroom Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* ================= PROPONENT COLUMN ================= */}
-        <div className="bg-white dark:bg-slate-900/90 border border-blue-200 dark:border-blue-900/40 rounded-xl overflow-hidden shadow-sm dark:shadow-none flex flex-col">
+        <div
+          className={`bg-white dark:bg-slate-900/90 border border-blue-200 dark:border-blue-900/40 rounded-xl overflow-hidden shadow-sm dark:shadow-none flex-col ${
+            mobileView === 'skeptic' ? 'hidden lg:flex' : 'flex'
+          }`}
+        >
           {/* Card Header */}
-          <div className="bg-blue-50/80 dark:bg-gradient-to-r dark:from-blue-950/60 dark:to-slate-900 p-3.5 border-b border-blue-200 dark:border-blue-900/40 flex items-center justify-between">
+          <div className="bg-blue-50/80 dark:bg-gradient-to-r dark:from-blue-950/60 dark:to-slate-900 p-3.5 border-b border-blue-200 dark:border-blue-900/40 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2.5">
               <div className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20">
                 <ShieldCheck className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-blue-950 dark:text-blue-200 tracking-tight flex items-center gap-1.5">
+                <h3 className="text-sm font-bold text-blue-950 dark:text-blue-200 tracking-tight flex items-center gap-1.5 flex-wrap">
                   Proponent Advocate
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800/50 font-mono">
                     SUPPORT
@@ -77,14 +108,14 @@ export const CourtroomSplit: React.FC<CourtroomSplitProps> = ({
               </div>
             </div>
             {isDebating && (
-              <span className="flex items-center gap-1 text-[10px] font-mono text-blue-700 dark:text-blue-400 bg-blue-100 dark:bg-blue-950/80 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800/50">
+              <span className="flex items-center gap-1 text-[10px] font-mono text-blue-700 dark:text-blue-400 bg-blue-100 dark:bg-blue-950/80 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800/50 shrink-0">
                 <Sparkles className="w-2.5 h-2.5 animate-spin" /> Stream Active
               </span>
             )}
           </div>
 
           {/* Arguments Feed */}
-          <div className="p-4 space-y-3.5 flex-1 overflow-y-auto max-h-[560px]">
+          <div className="p-3.5 sm:p-4 space-y-3.5 flex-1 lg:overflow-y-auto lg:max-h-[560px]">
             {proponentArgs.length === 0 ? (
               <div className="text-center py-12 text-xs text-slate-500 dark:text-slate-400">
                 <ShieldCheck className="w-8 h-8 mx-auto mb-2 opacity-30 text-blue-600 dark:text-blue-400" />
@@ -159,15 +190,19 @@ export const CourtroomSplit: React.FC<CourtroomSplitProps> = ({
         </div>
 
         {/* ================= SKEPTIC COLUMN ================= */}
-        <div className="bg-white dark:bg-slate-900/90 border border-rose-200 dark:border-rose-900/40 rounded-xl overflow-hidden shadow-sm dark:shadow-none flex flex-col">
+        <div
+          className={`bg-white dark:bg-slate-900/90 border border-rose-200 dark:border-rose-900/40 rounded-xl overflow-hidden shadow-sm dark:shadow-none flex-col ${
+            mobileView === 'proponent' ? 'hidden lg:flex' : 'flex'
+          }`}
+        >
           {/* Card Header */}
-          <div className="bg-rose-50/80 dark:bg-gradient-to-r dark:from-rose-950/60 dark:to-slate-900 p-3.5 border-b border-rose-200 dark:border-rose-900/40 flex items-center justify-between">
+          <div className="bg-rose-50/80 dark:bg-gradient-to-r dark:from-rose-950/60 dark:to-slate-900 p-3.5 border-b border-rose-200 dark:border-rose-900/40 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2.5">
               <div className="p-1.5 rounded-lg bg-rose-100 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20">
                 <ShieldAlert className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-rose-950 dark:text-rose-200 tracking-tight flex items-center gap-1.5">
+                <h3 className="text-sm font-bold text-rose-950 dark:text-rose-200 tracking-tight flex items-center gap-1.5 flex-wrap">
                   Red-Team Skeptic
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800/50 font-mono">
                     REFUTE
@@ -179,14 +214,14 @@ export const CourtroomSplit: React.FC<CourtroomSplitProps> = ({
               </div>
             </div>
             {isDebating && (
-              <span className="flex items-center gap-1 text-[10px] font-mono text-rose-700 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/80 px-2 py-0.5 rounded-full border border-rose-200 dark:border-rose-800/50">
+              <span className="flex items-center gap-1 text-[10px] font-mono text-rose-700 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/80 px-2 py-0.5 rounded-full border border-rose-200 dark:border-rose-800/50 shrink-0">
                 <Sparkles className="w-2.5 h-2.5 animate-spin" /> Stream Active
               </span>
             )}
           </div>
 
           {/* Arguments Feed */}
-          <div className="p-4 space-y-3.5 flex-1 overflow-y-auto max-h-[560px]">
+          <div className="p-3.5 sm:p-4 space-y-3.5 flex-1 lg:overflow-y-auto lg:max-h-[560px]">
             {skepticArgs.length === 0 ? (
               <div className="text-center py-12 text-xs text-slate-500 dark:text-slate-400">
                 <ShieldAlert className="w-8 h-8 mx-auto mb-2 opacity-30 text-rose-600 dark:text-rose-400" />

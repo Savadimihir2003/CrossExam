@@ -56,22 +56,23 @@ export const SseInspector: React.FC<SseInspectorProps> = ({
   return (
     <div
       className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm dark:shadow-none transition-[height] duration-200 ${
-        isOpen ? 'h-[480px]' : 'h-11'
+        isOpen ? 'h-[360px] sm:h-[460px]' : 'min-h-[44px]'
       } flex flex-col`}
     >
       {/* Top Bar / Accordion Header */}
-      <div className="flex items-center justify-between px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 cursor-pointer select-none">
-        <div className="flex items-center gap-2" onClick={onToggle}>
-          <Terminal className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-          <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-            Backend Telemetry &amp; Graph Inspector
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 cursor-pointer select-none">
+        <div className="flex items-center gap-2 min-w-0" onClick={onToggle}>
+          <Terminal className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
+          <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+            <span className="hidden sm:inline">Backend Telemetry &amp; Graph Inspector</span>
+            <span className="sm:hidden">Telemetry &amp; State</span>
           </h3>
-          <span className="text-[10px] font-mono tabular-nums px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-            {events.length} events
+          <span className="text-[10px] font-mono tabular-nums px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 shrink-0">
+            {events.length} <span className="hidden sm:inline">events</span>
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 ml-auto">
           {isOpen && (
             <div className="flex items-center bg-slate-200/70 dark:bg-slate-900 rounded-lg p-0.5 border border-slate-300/70 dark:border-slate-800">
               <button
@@ -80,14 +81,15 @@ export const SseInspector: React.FC<SseInspectorProps> = ({
                   e.stopPropagation();
                   setActiveTab('stream');
                 }}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
+                className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
                   activeTab === 'stream'
                     ? 'bg-white dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 shadow-sm'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
                 <Activity className="w-3 h-3" />
-                Live SSE Stream
+                <span className="hidden sm:inline">Live SSE Stream</span>
+                <span className="sm:hidden">SSE</span>
               </button>
               <button
                 type="button"
@@ -95,14 +97,15 @@ export const SseInspector: React.FC<SseInspectorProps> = ({
                   e.stopPropagation();
                   setActiveTab('state');
                 }}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
+                className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded text-[11px] font-medium transition-colors ${
                   activeTab === 'state'
                     ? 'bg-white dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 shadow-sm'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
                 <Code className="w-3 h-3" />
-                State Snapshot
+                <span className="hidden sm:inline">State Snapshot</span>
+                <span className="sm:hidden">State</span>
               </button>
             </div>
           )}

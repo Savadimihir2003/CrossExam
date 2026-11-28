@@ -82,9 +82,9 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
 
   return (
     <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 shadow-sm dark:shadow-none">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2">
-          <Scale className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+          <Scale className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
           <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-200">
             LangGraph Execution Pipeline
           </h3>
@@ -98,7 +98,7 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-2 relative">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 relative">
         {steps.map((step, idx) => {
           const { isActive, isCompleted, isPaused } = getStepState(step);
           const Icon = step.icon;
