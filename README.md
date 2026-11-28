@@ -454,6 +454,26 @@ The user interface ships with dual-mode Light & Dark parity while preserving the
 
 ---
 
+## 🌐 Free Public Deployment ($0, No Credit Card)
+
+CrossExam is deploy-ready for a **$0 public BYOAK demo** using **Cloudflare Pages** (Frontend) + **Render Free** (Backend) + a **Cloudflare Worker Cron** keep-alive ping:
+
+1. **Backend on Render (`render.yaml`):**
+   - Go to [dashboard.render.com](https://dashboard.render.com/) → **New +** → **Blueprint** → connect this repo.
+   - `render.yaml` configures the Python 3.12 FastAPI service on the `free` plan with `GROQ_API_KEY=""` (BYOAK mode active out of the box).
+   - Copy your Render URL (e.g., `https://crossexam-api.onrender.com`).
+
+2. **Frontend on Cloudflare Pages:**
+   - Go to [dash.cloudflare.com](https://dash.cloudflare.com/) → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**.
+   - Root directory: `frontend` | Build command: `npm run build` | Output directory: `dist`.
+   - Set environment variable `VITE_API_BASE_URL` = `https://crossexam-api.onrender.com` (no trailing slash).
+
+3. **Keep-Alive Cron Worker (`keepalive-worker/`):**
+   - Deploy `keepalive-worker/src/index.js` (`npx wrangler deploy` or via Cloudflare Dashboard) and set `RENDER_HEALTH_URL` = `https://crossexam-api.onrender.com/health`.
+   - Pings `/health` every 10 minutes (`*/10 * * * *`) so Render stays warm without hitting its 15-minute sleep timer.
+
+---
+
 ## ⚖️ License
 
 Distributed under the **MIT License**. See [LICENSE](LICENSE) for details. Built for high-assurance, defensible truth verification.

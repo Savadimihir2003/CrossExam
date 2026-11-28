@@ -14,6 +14,9 @@ import type {
   VerdictData,
 } from '../types/debate';
 
+const API_BASE = ((import.meta as any).env?.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+const apiUrl = (path: string) => `${API_BASE}${path}`;
+
 const DEFAULT_MODEL_SLOTS: ModelSlots = {
   guard: 'meta-llama/llama-prompt-guard-2-22m',
   decomposer: 'openai/gpt-oss-20b',
@@ -111,7 +114,7 @@ export function useDebateStream() {
 
   const validateApiKey = useCallback(async (candidateKey: string): Promise<{ valid: boolean; error?: string }> => {
     try {
-      const res = await fetch('/api/validate-key', {
+      const res = await fetch(apiUrl('/api/validate-key'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ api_key: candidateKey, provider: 'groq' }),
@@ -146,7 +149,7 @@ export function useDebateStream() {
 
   // Fetch server BYOAK config on mount
   useEffect(() => {
-    fetch('/api/config')
+    fetch(apiUrl('/api/config'))
       .then((res) => (res.ok ? res.json() : null))
       .then((cfg: ServerConfig | null) => {
         if (!cfg) return;
@@ -166,7 +169,7 @@ export function useDebateStream() {
   // Fetch SQLite debate history scoped to this browser session
   const fetchHistory = useCallback(async () => {
     try {
-      const res = await fetch('/api/debates?limit=50', {
+      const res = await fetch(apiUrl('/api/debates?limit=50'), {
         headers: { 'X-Session-ID': sessionIdRef.current },
       });
       if (res.ok) {
@@ -424,7 +427,7 @@ export function useDebateStream() {
       setStatus('running');
 
       try {
-        const res = await fetch('/api/debates', {
+        const res = await fetch(apiUrl('/api/debates'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -449,7 +452,7 @@ export function useDebateStream() {
         fetchHistory();
 
         // Connect SSE stream with BYOAK headers (in-memory only, never stored)
-        consumeStream(`/api/debates/${newThreadId}/stream`, {
+        consumeStream(apiUrl(`/api/debates/${newThreadId}/stream`), {
           headers: buildByoakHeaders(targetTemperature),
         });
       } catch (err: any) {
@@ -470,7 +473,7 @@ export function useDebateStream() {
       setInterruptData(null);
 
       // Post intervention and consume resume SSE stream
-      consumeStream(`/api/debates/${threadId}/intervene`, {
+      consumeStream(apiUrl(`/api/debates/${threadId}/intervene`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -494,7 +497,7 @@ export function useDebateStream() {
       setSseEvents([]);
 
       try {
-        const res = await fetch(`/api/debates/${targetThreadId}`);
+        const res = await fetch(apiUrl(`/api/debates/${targetThreadId}`));
         if (!res.ok) throw new Error('Failed to load debate');
         const debate = await res.json();
 
@@ -571,7 +574,7 @@ export function useDebateStream() {
           setActiveNode('hitl_gate_node');
         } else if (debate.status === 'running') {
           // Reconnect stream if it's still running
-          consumeStream(`/api/debates/${debate.thread_id}/stream`);
+          consumeStream(apiUrl(`/api/debates/${debate.thread_id}/stream`));
         }
       } catch (err: any) {
         setErrorMessage(err.message || 'Failed to load debate');

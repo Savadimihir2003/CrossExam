@@ -1,0 +1,10 @@
+name = "crossexam-keepalive"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[triggers]
+crons = ["*/10 * * * *"]
+
+[vars]
+# Set this to your deployed Render backend /health URL in Cloudflare Dashboard or before deploying
+RENDER_HEALTH_URL = "https://crossexam-api.onrender.com/health"
