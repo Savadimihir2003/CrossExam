@@ -95,3 +95,26 @@ export type PipelineNodeName =
   | 'hitl_gate_node'
   | 'hitl_resumed'
   | 'persist_node';
+
+export type ModelPreset = 'balanced' | 'fast' | 'smart' | 'custom';
+
+export interface ModelSlots {
+  guard: string;
+  decomposer: string;
+  proponent: string;
+  skeptic: string;
+  judge: string;
+}
+
+export interface ApiSettings {
+  apiKey: string;
+  provider: 'groq';
+  modelPreset: ModelPreset;
+  customModels: ModelSlots;
+}
+
+export interface ServerConfig {
+  server_key_configured: boolean;
+  default_models: ModelSlots;
+  model_presets: Record<string, ModelSlots>;
+}

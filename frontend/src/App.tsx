@@ -17,6 +17,7 @@ import { HistorySidebar } from './components/HistorySidebar';
 import { ExecutionGraph } from './components/ExecutionGraph';
 import { CourtroomSplit } from './components/CourtroomSplit';
 import { JudgeVerdictCard } from './components/JudgeVerdictCard';
+import { SettingsPanel } from './components/SettingsPanel';
 import { SseInspector } from './components/SseInspector';
 
 const PRESET_CLAIMS = [
@@ -74,6 +75,12 @@ export function App() {
     sseEvents,
     history,
     errorMessage,
+    serverKeyConfigured,
+    defaultModels,
+    apiSettings,
+    updateApiSettings,
+    clearApiKey,
+    validateApiKey,
     startDebate,
     intervene,
     loadDebate,
@@ -84,6 +91,7 @@ export function App() {
   const [inputClaim, setInputClaim] = useState('');
   const [selectedMaxRounds, setSelectedMaxRounds] = useState(3);
   const [selectedMode, setSelectedMode] = useState<'general' | 'scientific' | 'financial' | 'security'>('general');
+  const [selectedTemperature, setSelectedTemperature] = useState(0.2);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
 
@@ -91,7 +99,7 @@ export function App() {
     if (e) e.preventDefault();
     const claimToRun = inputClaim.trim() || activeClaim.trim();
     if (!claimToRun || status === 'running') return;
-    startDebate(claimToRun, selectedMaxRounds, selectedMode);
+    startDebate(claimToRun, selectedMaxRounds, selectedMode, selectedTemperature);
   };
 
   const handleSelectPreset = (presetClaim: string) => {
@@ -219,6 +227,17 @@ export function App() {
 
         {/* Content Container */}
         <div className="p-6 space-y-5 max-w-7xl mx-auto w-full">
+          {/* BYOAK API & Model Settings */}
+          <SettingsPanel
+            serverKeyConfigured={serverKeyConfigured}
+            defaultModels={defaultModels}
+            apiSettings={apiSettings}
+            onUpdateSettings={updateApiSettings}
+            onClearKey={clearApiKey}
+            onValidateKey={validateApiKey}
+            disabled={status === 'running'}
+          />
+
           {/* Claim Input & Presets Bar */}
           <section className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm dark:shadow-none space-y-3">
             <form onSubmit={handleRunDebate} className="flex flex-col sm:flex-row gap-2.5">
@@ -282,6 +301,30 @@ export function App() {
                     Security
                   </option>
                 </select>
+              </div>
+
+              {/* Guarded Temperature Control (0.0 – 0.7) */}
+              <div
+                className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-2.5 py-1.5 shrink-0"
+                title="Debater sampling temperature (0.0 = deterministic, 0.2 = balanced, 0.7 = max exploratory; Judge & Guard stay strictly capped)"
+              >
+                <label htmlFor="temp-range" className="text-[11px] font-mono text-slate-600 dark:text-slate-400">
+                  Temp:
+                </label>
+                <input
+                  id="temp-range"
+                  type="range"
+                  min={0}
+                  max={0.7}
+                  step={0.1}
+                  value={selectedTemperature}
+                  onChange={(e) => setSelectedTemperature(Number(e.target.value))}
+                  disabled={status === 'running'}
+                  className="w-16 accent-cyan-600 dark:accent-cyan-400 cursor-pointer"
+                />
+                <span className="text-xs font-mono font-semibold text-cyan-700 dark:text-cyan-400 tabular-nums w-6 text-right">
+                  {selectedTemperature.toFixed(1)}
+                </span>
               </div>
 
               {/* Action Buttons */}

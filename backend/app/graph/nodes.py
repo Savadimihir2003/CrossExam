@@ -1,15 +1,16 @@
 import asyncio
+from contextvars import ContextVar, Token
 import inspect
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
 from langgraph.types import Send, interrupt
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
-from app.config import settings
+from app.config import resolve_api_key, settings
 from app.db.sqlite import update_debate
 from app.graph.state import (
     ArgumentOutput,
@@ -131,12 +132,70 @@ async def _invoke_structured(
     return result, _extract_tokens(None, str(result))
 
 
-def get_llm(model_name: str, temperature: float = 0.2) -> ChatGroq:
-    """Instantiate a ChatGroq client with key validation."""
-    api_key = settings.validate_groq_api_key()
+_request_api_key: ContextVar[Optional[str]] = ContextVar("_request_api_key", default=None)
+_request_models: ContextVar[Optional[dict[str, str]]] = ContextVar("_request_models", default=None)
+_request_temperature: ContextVar[Optional[float]] = ContextVar("_request_temperature", default=None)
+
+
+def clamp_temperature(value: Optional[float], default: float = 0.2, max_temp: float = 0.7) -> float:
+    """Clamp user-supplied temperature into a safe, grounded [0.0, max_temp] range."""
+    if value is None:
+        return default
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return default
+    return round(max(0.0, min(numeric, max_temp)), 2)
+
+
+def set_request_context(
+    api_key: Optional[str] = None,
+    models: Optional[dict[str, str]] = None,
+    temperature: Optional[float] = None,
+) -> tuple[Token, Token, Token]:
+    """Bind request-scoped BYOAK key, model overrides, and clamped temperature in RAM only."""
+    clamped = clamp_temperature(temperature) if temperature is not None else None
+    return (
+        _request_api_key.set(api_key.strip() if api_key and api_key.strip() else None),
+        _request_models.set(models if models else None),
+        _request_temperature.set(clamped),
+    )
+
+
+def reset_request_context(tokens: tuple[Token, Token, Token]) -> None:
+    """Clear request-scoped BYOAK key, model overrides, and temperature from RAM."""
+    key_token, models_token, temp_token = tokens
+    _request_api_key.reset(key_token)
+    _request_models.reset(models_token)
+    _request_temperature.reset(temp_token)
+
+
+def get_effective_temperature(default_temp: float, max_temp: float = 0.7) -> float:
+    """Return clamped per-request temperature if set, otherwise node default."""
+    req_temp = _request_temperature.get()
+    if req_temp is None:
+        return default_temp
+    return clamp_temperature(req_temp, default=default_temp, max_temp=max_temp)
+
+
+def get_effective_model(slot: str, default_model: str) -> str:
+    """Return user-selected model for a node slot, falling back to server default."""
+    overrides = _request_models.get()
+    if overrides and isinstance(overrides.get(slot), str) and overrides[slot].strip():
+        return overrides[slot].strip()
+    return default_model
+
+
+def get_llm(
+    model_name: str,
+    temperature: float = 0.2,
+    api_key: Optional[str] = None,
+) -> ChatGroq:
+    """Instantiate a ChatGroq client using per-request BYOAK key or server .env key."""
+    resolved_key = resolve_api_key(api_key or _request_api_key.get())
     return ChatGroq(
         model=model_name,
-        api_key=api_key,
+        api_key=resolved_key,
         temperature=temperature,
     )
 
@@ -185,9 +244,11 @@ async def guard_node(state: DebateState) -> dict[str, Any]:
     raw_claim = state.get("raw_claim", "")
     is_suspicious = any(p in raw_claim.lower() for p in _SUSPICIOUS_PATTERNS)
 
-    if not is_suspicious and settings.GROQ_API_KEY.strip():
+    active_key = (_request_api_key.get() or settings.GROQ_API_KEY).strip()
+    if not is_suspicious and active_key:
         try:
-            guard_llm = get_llm(settings.GROQ_GUARD_MODEL, temperature=0.0)
+            guard_model = get_effective_model("guard", settings.GROQ_GUARD_MODEL)
+            guard_llm = get_llm(guard_model, temperature=0.0)
             guard_resp = await invoke_llm_with_retry(
                 guard_llm,
                 [
@@ -239,7 +300,8 @@ def guard_router(state: DebateState) -> str:
 async def decomposer_node(state: DebateState) -> dict[str, Any]:
     """Decompose the raw claim into 2-3 atomic, independently falsifiable sub-claims."""
     raw_claim = state.get("raw_claim", "")
-    llm = get_llm(settings.GROQ_DECOMPOSER_MODEL, temperature=0.1)
+    decomposer_model = get_effective_model("decomposer", settings.GROQ_DECOMPOSER_MODEL)
+    llm = get_llm(decomposer_model, temperature=get_effective_temperature(0.1, max_temp=0.3))
 
     messages = [
         SystemMessage(
@@ -313,8 +375,12 @@ async def _run_debater_node(
     mode = data.get("mode") or "general"
 
     is_proponent = role == "proponent"
-    model_name = settings.GROQ_PROPONENT_MODEL if is_proponent else settings.GROQ_SKEPTIC_MODEL
-    llm = get_llm(model_name, temperature=0.3)
+    model_name = (
+        get_effective_model("proponent", settings.GROQ_PROPONENT_MODEL)
+        if is_proponent
+        else get_effective_model("skeptic", settings.GROQ_SKEPTIC_MODEL)
+    )
+    llm = get_llm(model_name, temperature=get_effective_temperature(0.3, max_temp=0.7))
 
     default_query = (
         f"{raw_claim} corroborating evidence statistics"
@@ -440,7 +506,8 @@ async def judge_node(state: DebateState) -> dict[str, Any]:
     # Live HTTP reachability check on all cited/discovered URLs
     url_verification_map = await verify_evidence_urls(evidence)
 
-    llm = get_llm(settings.GROQ_JUDGE_MODEL, temperature=0.1)
+    judge_model = get_effective_model("judge", settings.GROQ_JUDGE_MODEL)
+    llm = get_llm(judge_model, temperature=get_effective_temperature(0.1, max_temp=0.3))
 
     debate_transcript = []
     rounds_count = max(len(prop_args), len(skep_args))

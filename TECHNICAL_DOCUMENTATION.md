@@ -113,7 +113,7 @@ flowchart TD
 
 - Python 3.11+
 - Node.js 18+ and `npm`
-- A free Groq API key from [console.groq.com](https://console.groq.com/)
+- A free Groq API key from [console.groq.com](https://console.groq.com/) — _optional if using BYOAK mode_ (users paste their own key in the UI)
 
 ### 5.1 Configure Environment
 
@@ -122,6 +122,9 @@ cd backend
 cp .env.example .env
 # Edit backend/.env and set:
 # GROQ_API_KEY=gsk_your_actual_key_here
+#
+# Running in BYOAK mode? Leave GROQ_API_KEY empty — users paste their
+# own key into the UI Settings Panel. The server starts and runs fine.
 ```
 
 ### 5.2 Start the Backend (FastAPI + Uvicorn)
@@ -176,7 +179,7 @@ Exposed tools: `verify_claim(claim, max_rounds, mode)` and `list_recent_debates(
 
 ## 6. How to Run All Tests Manually Using `pytest`
 
-All 21 unit and integration tests run **offline** using mocked LLM and search/HTTP responses—no Groq API key or internet connection is required.
+All 29 unit and integration tests run **offline** using mocked LLM and search/HTTP responses—no Groq API key or internet connection is required.
 
 ### Run the Full Test Suite
 
@@ -209,6 +212,9 @@ backend\.venv\Scripts\pytest backend/tests/test_workflow_e2e.py -v
 
 # FastAPI REST/SSE endpoints & MCP stdio JSON-RPC dispatch
 backend\.venv\Scripts\pytest backend/tests/test_api_and_mcp.py -v
+
+# BYOAK privacy, ContextVar isolation, /api/config, /api/validate-key, X-Session-ID & temperature clamping
+backend\.venv\Scripts\pytest backend/tests/test_byoak.py -v
 ```
 
 ### Verify Frontend TypeScript & Vite Bundle
